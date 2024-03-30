@@ -1,0 +1,70 @@
+#include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
+#include <ESP8266HTTPUpdateServer.h>
+
+const char* ssid = "IrAlexa";
+const char* password = "12345678";
+const char* homeSSID = "your_home_ssid";
+const char* homePassword = "your_home_password";
+
+ESP8266WebServer server(80);
+ESP8266HTTPUpdateServer httpUpdater;
+
+unsigned long hotspotStartTime = 0;
+const unsigned long hotspotDuration = 15000; // 15 seconds
+bool clientConnected = false;
+
+void handleRoot() {
+  String html = "<html><body>";
+  html += "<h1>ESP01S_1M OTA Update2</h1>";
+  html += "<form method='POST' action='/update' enctype='multipart/form-data'>";
+  html += "<input type='file' name='update'>";
+  html += "<input type='submit' value='Update'>";
+  html += "</form>";
+  html += "</body></html>";
+  
+  server.send(200, "text/html", html);
+}
+
+void setup() {
+  Serial.begin(115200);
+  
+  // Create the hotspot
+  WiFi.softAP(ssid, password);
+  Serial.println("Hotspot created");
+  
+  // Start the web server
+  server.on("/", handleRoot);
+  server.begin();
+  
+  // Start the OTA update server
+  httpUpdater.setup(&server);
+  
+  hotspotStartTime = millis();
+}
+
+void loop() {
+  server.handleClient();
+  
+  // Check if a client is connected
+  if (WiFi.softAPgetStationNum() > 0) {
+    clientConnected = true;
+  }
+  
+  // Check if the hotspot duration has elapsed and no client is connected
+  if (WiFi.getMode() == WIFI_AP && millis() - hotspotStartTime >= hotspotDuration && !clientConnected) {
+    WiFi.softAPdisconnect(true);
+    Serial.println("Hotspot closed");
+    
+    // Connect to home network
+    WiFi.begin(homeSSID, homePassword);
+    Serial.println("Connecting to home network");
+    
+    while (WiFi.status() != WL_CONNECTED) {
+      delay(1000);
+      Serial.println("Connecting to home network...");
+    }
+    
+    Serial.println("Connected to home network");
+  }
+}
