@@ -36,7 +36,7 @@ HTTPUpdateServer httpUpdater;
 #endif
 
 unsigned long hotspotStartTime = 0;
-const unsigned long hotspotDuration = 15000; // 15 seconds
+const unsigned long hotspotDuration = 60000; // 20 seconds
 bool clientConnected = false;
 
 #define CONNECTED_LED 2
@@ -108,6 +108,8 @@ void setup() {
   Serial.begin(115200);
   #endif
 
+  delay(2000); // Add a delay before creating the hotspot
+
   // Create the hotspot
   WiFi.softAP(ssid, password);
   Serial.println("Hotspot created");
@@ -120,6 +122,25 @@ void setup() {
   httpUpdater.setup(&server);
 
   hotspotStartTime = millis();
+}
+
+void startProgram() {
+  irsend.begin();
+
+  fauxmo.createServer(true);
+  fauxmo.setPort(80);
+
+  fauxmo.enable(false);
+  fauxmo.enable(true);
+
+  for (unsigned int i = 0; i < numDevices; i++) {
+    fauxmo.addDevice(devices[i]);
+  }
+  fauxmo.onSetState([](unsigned char device_id, const char* device_name, bool state, unsigned char value) {
+    Serial.printf("[MAIN] Device #%d (%s) state: %s value: %d\n", device_id, device_name, state ? "ON" : "OFF", value);
+    requestedDevice = device_id + 1;
+    receivedState = state;
+  });
 }
 
 void loop() {
@@ -147,25 +168,10 @@ void loop() {
     Serial.println("Connected to home network");
 
     // Start your program here
-    irsend.begin();
+    startProgram();
+  }
 
-    fauxmo.createServer(true);
-    fauxmo.setPort(80);
-
-    fauxmo.enable(false);
-    fauxmo.enable(true);
-
-    for (unsigned int i = 0; i < numDevices; i++) {
-      fauxmo.addDevice(devices[i]);
-    }
-    fauxmo.onSetState([](unsigned char device_id, const char* device_name, bool state, unsigned char value) {
-Serial.printf("[MAIN] Device #%d (%s) state: %s value: %d\n", device_id, device_name, state ? "ON" : "OFF", value);
-requestedDevice = device_id + 1;
-receivedState = state;
-});
-}
-
-fauxmo.handle();
+  fauxmo.handle();
 
 switch (requestedDevice) {
 case 0:
@@ -198,4 +204,5 @@ last = millis();
 Serial.printf("[MAIN] Free heap: %d bytes\n", ESP.getFreeHeap());
 digitalWrite(CONNECTED_LED, (WiFi.status() != WL_CONNECTED));
 }
+delay(100); // Add a small delay at the end of each loop iteration
 }
