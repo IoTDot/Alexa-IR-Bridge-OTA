@@ -66,9 +66,10 @@ void handleRoot() {
   html += ".custom-file-label, input[type='submit'] { margin-top: 20px; background-color: white; color: black; padding: 10px 20px; border: none; cursor: pointer; font-size: 16px; }";
   html += "</style></head><body>";
   html += "<h1>IrAlexa</h1>";
-  html += "<h2>FIRMWARE UPDATE</h2>";
+  html += "<h3>FIRMWARE UPDATE</h3>";
   html += "<br>";
-  html += "<p>First choose the new firmware .bin file</p>";
+  html += "<p>First choose the new firmware <b>.bin</b> file</p>";
+  html += "<br>";
   html += "<form method='POST' action='/update' enctype='multipart/form-data'>";
   html += "<input type='file' name='update' class='custom-file-input' id='fileInput'>";
   html += "<label for='fileInput' class='custom-file-label'>Choose file</label>";
@@ -77,9 +78,7 @@ void handleRoot() {
   html += "<br>";
   html += "<br>";
   html += "<br>";
-  html += "<p>next use Update button</p>";
-  html += "<br>";
-  html += "<br>";
+  html += "<p>next use <b>Update</b> button</p>";
   html += "<input type='submit' value='Update'>";
   html += "</form>";
   html += "<script>";
