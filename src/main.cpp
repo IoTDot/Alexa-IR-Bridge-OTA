@@ -36,7 +36,7 @@ HTTPUpdateServer httpUpdater;
 #endif
 
 unsigned long hotspotStartTime = 0;
-const unsigned long hotspotDuration = 60000; // 20 seconds
+const unsigned long hotspotDuration = 30000; // time for hotspot to be up
 bool clientConnected = false;
 
 #define CONNECTED_LED 2
@@ -161,8 +161,9 @@ void loop() {
     Serial.println("Connecting to home network");
 
     while (WiFi.status() != WL_CONNECTED) {
-      delay(1000);
-      Serial.println("Connecting to home network...");
+      delay(100);
+      WiFi.hostname("IrAlexa");
+      delay(100);
     }
 
     Serial.println("Connected to home network");
