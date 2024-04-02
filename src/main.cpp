@@ -1,16 +1,9 @@
 #include <Arduino.h>
-#include <fauxmoESP.h>
-#include <IRremoteESP8266.h>
-#include <IRsend.h>
 
 #if defined(ESP8266)
 #include <ESP8266WiFi.h>
-#include <ESP8266WebServer.h>
-#include <ESP8266HTTPUpdateServer.h>
 #elif defined(ESP32)
 #include <WiFi.h>
-#include <WebServer.h>
-#include <HTTPUpdateServer.h>
 #else
 #error "Not supported board!"
 #endif
@@ -21,76 +14,54 @@
 
 #define IRLED_PIN IRLED
 
+#include "fauxmoESP.h"            
 
-const char* ssid = "IrAlexa";
-const char* password = "12345678";
-const char* homeSSID = "Trojan_test_v2";
-const char* homePassword = "$j2vFHjW^tM!JV2$vw!9tGaM";
+#include <IRremoteESP8266.h>
 
-#if defined(ESP8266)
-ESP8266WebServer server(80);
-ESP8266HTTPUpdateServer httpUpdater;
-#elif defined(ESP32)
-WebServer server(80);
-HTTPUpdateServer httpUpdater;
-#endif
-
-unsigned long hotspotStartTime = 0;
-const unsigned long hotspotDuration = 30000; // time for hotspot to be up
-bool clientConnected = false;
+#include <IRsend.h>
 
 #define CONNECTED_LED 2
+
 const uint16_t IrLed = IRLED_PIN;
+
 IRsend irsend(IrLed);
 
-const char* devices[] = {
-  "TV",
-  "Skip",
-  "Mute",
-  "Plus",
-  "Minus",
-  "Speakers",
+#define WIFI_SSID "Trojan_test_v2"
+#define WIFI_PASS "$j2vFHjW^tM!JV2$vw!9tGaM"
+
+const char * devices[] = {
+  
+   "TV",
+   "Skip",
+   "Mute",
+   "Plus",
+   "Minus",
+   "Speakers",
+
 };
 
-#define numDevices (sizeof(devices) / sizeof(char*))
+#define numDevices (sizeof(devices)/sizeof(char *))
 
 volatile int requestedDevice = 0;
 volatile boolean receivedState = false;
 
 fauxmoESP fauxmo;
-void handleRoot() {
-  String html = "<html><head><style>";
-  html += "body { background-color: #292323; color: white; text-align: center; font-family: Arial, sans-serif; }";
-  html += "h1 { margin-top: 50px; }";
-  html += ".custom-file-input { display: none; }";
-  html += ".custom-file-label, input[type='submit'] { margin-top: 20px; background-color: white; color: black; padding: 10px 20px; border: none; cursor: pointer; font-size: 16px; }";
-  html += "</style></head><body>";
-  html += "<h1>IrAlexa</h1>";
-  html += "<h3>FIRMWARE UPDATE</h3>";
-  html += "<br>";
-  html += "<p>First choose the new firmware <b>.bin</b> file</p>";
-  html += "<br>";
-  html += "<form method='POST' action='/update' enctype='multipart/form-data'>";
-  html += "<input type='file' name='update' class='custom-file-input' id='fileInput'>";
-  html += "<label for='fileInput' class='custom-file-label'>Choose file</label>";
-  html += "<div id='fileName' style='margin-top: 10px;'></div>";
-  html += "<br>";
-  html += "<br>";
-  html += "<br>";
-  html += "<br>";
-  html += "<p>next use <b>Update</b> button</p>";
-  html += "<input type='submit' value='Update'>";
-  html += "</form>";
-  html += "<script>";
-  html += "const fileInput = document.getElementById('fileInput');";
-  html += "const fileName = document.getElementById('fileName');";
-  html += "fileInput.addEventListener('change', (event) => {";
-  html += "fileName.textContent = event.target.files[0].name || 'No file chosen';";
-  html += "});";
-  html += "</script>";
-  html += "</body></html>";
 
-  server.send(200, "text/html", html);
+void wifiSetup() {
+  WiFi.mode(WIFI_STA);
+
+  Serial.printf("[WIFI] Connecting to %s ", WIFI_SSID);
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.print(".");
+    delay(100);
+  }
+  Serial.println();
+
+  digitalWrite(CONNECTED_LED, LOW);
+
+  Serial.printf("[WIFI] STATION Mode, SSID: %s, IP address: %s\n", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
 }
 
 void setup() {
@@ -106,25 +77,11 @@ void setup() {
   #elif defined(ESP32)
   Serial.begin(115200);
   #endif
+  
+  pinMode(CONNECTED_LED, OUTPUT);
+  digitalWrite(CONNECTED_LED, HIGH);
 
-  delay(2000); // Add a delay before creating the hotspot
-
-  // Create the hotspot
-  WiFi.softAP(ssid, password);
-  Serial.println("Hotspot created");
-
-  // Start the web server
-  server.on("/", handleRoot);
-  server.begin();
-
-  // Start the OTA update server
-  httpUpdater.setup(&server);
-
-  hotspotStartTime = millis();
-}
-
-void startProgram() {
-  irsend.begin();
+  wifiSetup();
 
   fauxmo.createServer(true);
   fauxmo.setPort(80);
@@ -135,74 +92,50 @@ void startProgram() {
   for (unsigned int i = 0; i < numDevices; i++) {
     fauxmo.addDevice(devices[i]);
   }
-  fauxmo.onSetState([](unsigned char device_id, const char* device_name, bool state, unsigned char value) {
+
+
+  fauxmo.onSetState([](unsigned char device_id, const char * device_name, bool state, unsigned char value) {
+        
     Serial.printf("[MAIN] Device #%d (%s) state: %s value: %d\n", device_id, device_name, state ? "ON" : "OFF", value);
+
     requestedDevice = device_id + 1;
+
     receivedState = state;
   });
+
 }
 
 void loop() {
-  server.handleClient();
-
-  // Check if a client is connected
-  if (WiFi.softAPgetStationNum() > 0) {
-    clientConnected = true;
-  }
-
-  // Check if the hotspot duration has elapsed and no client is connected
-  if (WiFi.getMode() == WIFI_AP && millis() - hotspotStartTime >= hotspotDuration && !clientConnected) {
-    WiFi.softAPdisconnect(true);
-    Serial.println("Hotspot closed");
-
-    // Connect to home network
-    WiFi.begin(homeSSID, homePassword);
-    Serial.println("Connecting to home network");
-
-    while (WiFi.status() != WL_CONNECTED) {
-      delay(100);
-      WiFi.hostname("IrAlexa");
-      delay(100);
-    }
-
-    Serial.println("Connected to home network");
-
-    // Start your program here
-    startProgram();
-  }
-
   fauxmo.handle();
+  
+  switch (requestedDevice) {
+    case 0: break;
 
-switch (requestedDevice) {
-case 0:
-break;
-case 1:
-irsend.sendSAMSUNG(0xE0E040BF, 32); // TV on/off
-break;
-case 2:
-irsend.sendSAMSUNG(0xE0E016E9, 32); // TV ok/skip
-break;
-case 3:
-irsend.sendEpson(0x8322EE11, 32); // Speakers mute
-break;
-case 4:
-irsend.sendEpson(0x8322E21D, 32); // Speakers Vol_Up
-break;
-case 5:
-irsend.sendEpson(0x8322E31C, 32); // Speakers Vol_Down
-break;
-case 6:
-irsend.sendEpson(0x8322E11E, 32); // Speakers on/off
-break;
-}
+    case 1: irsend.sendSAMSUNG(0xE0E040BF, 32);           // TV on/off
+            break;
 
-requestedDevice = 0; // Reset requestedDevice before re-entering loop()
+    case 2: irsend.sendSAMSUNG(0xE0E016E9, 32);          // TV ok/skip
+            break;
 
-static unsigned long last = millis();
-if (millis() - last > 5000) {
-last = millis();
-Serial.printf("[MAIN] Free heap: %d bytes\n", ESP.getFreeHeap());
-digitalWrite(CONNECTED_LED, (WiFi.status() != WL_CONNECTED));
-}
-delay(100); // Add a small delay at the end of each loop iteration
+    case 3: irsend.sendEpson(0x8322EE11, 32);            // Speakers mute
+            break;
+
+    case 4: irsend.sendEpson(0x8322E21D, 32);            // Speakers Vol_Up
+            break;
+
+    case 5: irsend.sendEpson(0x8322E31C, 32);            // Speakers Vol_Down
+            break;
+
+    case 6: irsend.sendEpson(0x8322E11E, 32);            // Speakers on/off
+            break;                                                    
+  }
+
+  requestedDevice = 0;
+
+  static unsigned long last = millis();     
+  if (millis() - last > 5000) {
+    last = millis();
+    Serial.printf("[MAIN] Free heap: %d bytes\n", ESP.getFreeHeap());
+    digitalWrite(CONNECTED_LED,  (WiFi.status() != WL_CONNECTED));
+  }
 }
