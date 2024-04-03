@@ -23,8 +23,8 @@
 
 const char* ssid = "IrAlexa";
 const char* password = "12345678";
-const char* homeSSID = "test_2.7";
-const char* homePassword = "zaq1@WSX";
+const char* homeSSID = "Trojan_test_v2";
+const char* homePassword = "$j2vFHjW^tM!JV2$vw!9tGaM";
 
 #if defined(ESP8266)
 ESP8266WebServer server(80);
@@ -35,7 +35,7 @@ HTTPUpdateServer httpUpdater;
 #endif
 
 unsigned long hotspotStartTime = 0;
-const unsigned long hotspotDuration = 15000; // 15 seconds
+const unsigned long hotspotDuration = 15000;
 bool clientConnected = false;
 
 #define CONNECTED_LED 2
@@ -89,9 +89,9 @@ void handleRoot() {
   html += "fileName.textContent = event.target.files[0].name || 'No file chosen';";
   html += "});";
   html += "</script>";
-  html += "</body></html>";
+  html += "";
 
-  server.send(200, "text/html", html);
+server.send(200, "text/html", html);
 }
 
 void setupFauxmo() {
@@ -111,23 +111,7 @@ void setupFauxmo() {
 }
 
 void setup() {
-  // Create the hotspot
-  WiFi.softAP(ssid, password);
-  Serial.println("Hotspot created");
-
-  // Start the web server
-  server.on("/", handleRoot);
-  server.begin();
-
-  // Start the OTA update server
-  httpUpdater.setup(&server);
-
-  hotspotStartTime = millis();
-
   irsend.begin();
-  #if defined(ESP8266) && defined(ESP01_1M)
-  pinMode(3, FUNCTION_3); // Wykonaj tylko dla ESP01_1M
-  #endif
 
   #if defined(ESP8266) && defined(ESP01_1M)
   Serial.begin(115200, SERIAL_8N1, SERIAL_TX_ONLY);
@@ -135,26 +119,38 @@ void setup() {
   Serial.begin(115200);
   #endif
 
-    // Set up Fauxmo service
-  setupFauxmo();
+  pinMode(CONNECTED_LED, OUTPUT);
+  digitalWrite(CONNECTED_LED, HIGH);
+
+  WiFi.softAP(ssid, password);
+  Serial.print("Hotspot created. IP address: ");
+  Serial.println(WiFi.softAPIP());
+
+  server.on("/", handleRoot);
+  server.begin();
+
+  httpUpdater.setup(&server);
+
+  hotspotStartTime = millis();
+
+  #if defined(ESP8266) && defined(ESP01_1M)
+  pinMode(3, FUNCTION_3);
+  #endif
 }
 
 void loop() {
-  // Check if the hotspot is active
   if (WiFi.getMode() == WIFI_AP) {
     server.handleClient();
 
-    // Check if a client is connected
     if (WiFi.softAPgetStationNum() > 0) {
       clientConnected = true;
     }
 
-    // Check if the hotspot duration has elapsed and no client is connected
     if (millis() - hotspotStartTime >= hotspotDuration && !clientConnected) {
       WiFi.softAPdisconnect();
+      server.close();
       Serial.println("Hotspot closed");
 
-      // Connect to home network
       WiFi.begin(homeSSID, homePassword);
       Serial.println("Connecting to home network");
 
@@ -164,38 +160,38 @@ void loop() {
       }
 
       Serial.println("Connected to home network");
+      Serial.print("IP address: ");
+      Serial.println(WiFi.localIP());
 
-      // Start your program here
-      irsend.begin();
+      setupFauxmo();
     }
+  } else {
+    fauxmo.handle();
+
+    switch (requestedDevice) {
+      case 0:
+        break;
+      case 1: irsend.sendSAMSUNG(0xE0E040BF, 32);
+        break;
+      case 2: irsend.sendSAMSUNG(0xE0E016E9, 32);
+        break;
+      case 3: irsend.sendEpson(0x8322EE11, 32);
+        break;
+      case 4: irsend.sendEpson(0x8322E21D, 32);
+        break;
+      case 5: irsend.sendEpson(0x8322E31C, 32);
+        break;
+      case 6: irsend.sendEpson(0x8322E11E, 32);
+        break;
+    }
+
+    requestedDevice = 0;
   }
-
-  fauxmo.handle();
-
-
-switch (requestedDevice) {
-case 0:
-break;
-case 1: irsend.sendSAMSUNG(0xE0E040BF, 32); // TV on/off
-break;
-case 2: irsend.sendSAMSUNG(0xE0E016E9, 32); // TV ok/skip
-break;
-case 3: irsend.sendEpson(0x8322EE11, 32); // Speakers mute
-break;
-case 4: irsend.sendEpson(0x8322E21D, 32); // Speakers Vol_Up
-break;
-case 5: irsend.sendEpson(0x8322E31C, 32); // Speakers Vol_Down
-break;
-case 6: irsend.sendEpson(0x8322E11E, 32); // Speakers on/off
-break;
-}
-
-requestedDevice = 0; // Reset requestedDevice before re-entering loop()
 
   static unsigned long last = millis();     
   if (millis() - last > 5000) {
     last = millis();
     Serial.printf("[MAIN] Free heap: %d bytes\n", ESP.getFreeHeap());
-    digitalWrite(CONNECTED_LED,  (WiFi.status() != WL_CONNECTED));
+    digitalWrite(CONNECTED_LED, (WiFi.status() != WL_CONNECTED));
   }
 }
