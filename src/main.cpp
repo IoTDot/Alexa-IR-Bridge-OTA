@@ -134,6 +134,9 @@ void setup() {
   #elif defined(ESP32)
   Serial.begin(115200);
   #endif
+
+    // Set up Fauxmo service
+  setupFauxmo();
 }
 
 void loop() {
@@ -164,12 +167,11 @@ void loop() {
 
       // Start your program here
       irsend.begin();
-
-      // Set up Fauxmo service
-      setupFauxmo();
     }
-  } else {
-    fauxmo.handle();
+  }
+
+  fauxmo.handle();
+
 
 switch (requestedDevice) {
 case 0:
@@ -190,11 +192,10 @@ break;
 
 requestedDevice = 0; // Reset requestedDevice before re-entering loop()
 
-    static unsigned long last = millis();     
-    if (millis() - last > 5000) {
-      last = millis();
-      Serial.printf("[MAIN] Free heap: %d bytes\n", ESP.getFreeHeap());
-      digitalWrite(CONNECTED_LED,  (WiFi.status() != WL_CONNECTED));
-    }
+  static unsigned long last = millis();     
+  if (millis() - last > 5000) {
+    last = millis();
+    Serial.printf("[MAIN] Free heap: %d bytes\n", ESP.getFreeHeap());
+    digitalWrite(CONNECTED_LED,  (WiFi.status() != WL_CONNECTED));
   }
 }
