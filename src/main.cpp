@@ -94,6 +94,22 @@ void handleRoot() {
   server.send(200, "text/html", html);
 }
 
+void setupFauxmo() {
+  fauxmo.createServer(true);
+  fauxmo.setPort(80);
+  fauxmo.enable(true);
+
+  for (unsigned int i = 0; i < numDevices; i++) {
+    fauxmo.addDevice(devices[i]);
+  }
+
+  fauxmo.onSetState([](unsigned char device_id, const char* device_name, bool state, unsigned char value) {
+    Serial.printf("[MAIN] Device #%d (%s) state: %s value: %d\n", device_id, device_name, state ? "ON" : "OFF", value);
+    requestedDevice = device_id + 1;
+    receivedState = state;
+  });
+}
+
 void setup() {
   // Create the hotspot
   WiFi.softAP(ssid, password);
@@ -149,23 +165,11 @@ void loop() {
       // Start your program here
       irsend.begin();
 
-      // Create and enable Fauxmo server
-      fauxmo.createServer(true);
-      fauxmo.setPort(80);
-      fauxmo.enable(true);
-
-      for (unsigned int i = 0; i < numDevices; i++) {
-        fauxmo.addDevice(devices[i]);
-      }
-      fauxmo.onSetState([](unsigned char device_id, const char* device_name, bool state, unsigned char value) {
-        Serial.printf("[MAIN] Device #%d (%s) state: %s value: %d\n", device_id, device_name, state ? "ON" : "OFF", value);
-        requestedDevice = device_id + 1;
-        receivedState = state;
-      });
+      // Set up Fauxmo service
+      setupFauxmo();
     }
   } else {
     fauxmo.handle();
-
 
 switch (requestedDevice) {
 case 0:
