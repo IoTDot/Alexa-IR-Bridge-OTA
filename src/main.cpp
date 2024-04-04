@@ -112,13 +112,9 @@ void setupFauxmo() {
 }
 
 void setup() {
-<<<<<<< HEAD
   #if defined(ESP8266) && defined(ESP01_1M)
   pinMode(3, FUNCTION_3);
   #endif
-=======
-  irsend.begin();
->>>>>>> 91504b0 (fix emulated devices discovery bugs)
 
   #if defined(ESP8266) && defined(ESP01_1M)
   Serial.begin(115200, SERIAL_8N1, SERIAL_TX_ONLY);
@@ -126,11 +122,8 @@ void setup() {
   Serial.begin(115200);
   #endif
 
-<<<<<<< HEAD
   irsend.begin();
 
-=======
->>>>>>> 91504b0 (fix emulated devices discovery bugs)
   pinMode(CONNECTED_LED, OUTPUT);
   digitalWrite(CONNECTED_LED, HIGH);
 
@@ -145,12 +138,6 @@ void setup() {
 
   hotspotStartTime = millis();
 
-<<<<<<< HEAD
-=======
-  #if defined(ESP8266) && defined(ESP01_1M)
-  pinMode(3, FUNCTION_3);
-  #endif
->>>>>>> 91504b0 (fix emulated devices discovery bugs)
 }
 
 void loop() {
