@@ -111,6 +111,16 @@ void setupFauxmo() {
   });
 }
 
+void blinkLED() {
+  static unsigned long lastBlinkTime = 0;
+  const unsigned long blinkInterval = 500;
+
+  if (millis() - lastBlinkTime >= blinkInterval) {
+    lastBlinkTime = millis();
+    digitalWrite(CONNECTED_LED, !digitalRead(CONNECTED_LED));
+  }
+}
+
 void setup() {
   #if defined(ESP8266) && defined(ESP01_1M)
   pinMode(3, FUNCTION_3);
@@ -141,8 +151,10 @@ void setup() {
 }
 
 void loop() {
-  if (WiFi.getMode() == WIFI_AP) {
+if (WiFi.getMode() == WIFI_AP) {
     server.handleClient();
+    blinkLED();  // Call the blinkLED() function to blink the LED when the hotspot is on
+
 
     if (WiFi.softAPgetStationNum() > 0) {
       clientConnected = true;
