@@ -125,7 +125,7 @@ void setup() {
   irsend.begin();
 
   pinMode(CONNECTED_LED, OUTPUT);
-  digitalWrite(CONNECTED_LED, HIGH);
+  digitalWrite(CONNECTED_LED, LOW);
 
   WiFi.softAP(ssid, password);
   Serial.print("Hotspot created. IP address: ");
@@ -152,6 +152,8 @@ void loop() {
       WiFi.softAPdisconnect();
       server.close();
       Serial.println("Hotspot closed");
+
+      digitalWrite(CONNECTED_LED, HIGH);
 
       WiFi.begin(homeSSID, homePassword);
       Serial.println("Connecting to home network");
@@ -194,6 +196,5 @@ void loop() {
   if (millis() - last > 5000) {
     last = millis();
     Serial.printf("[MAIN] Free heap: %d bytes\n", ESP.getFreeHeap());
-    digitalWrite(CONNECTED_LED, (WiFi.status() != WL_CONNECTED));
   }
 }
