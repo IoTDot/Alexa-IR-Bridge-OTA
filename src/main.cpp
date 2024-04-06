@@ -22,10 +22,10 @@
 
 #define IRLED_PIN IRLED
 
-const char* ssid = "IrAlexa";
-const char* password = "12345678";
-const char* homeSSID = "Trojan_test_v2";
-const char* homePassword = "$j2vFHjW^tM!JV2$vw!9tGaM";
+const char *ssid = "IrAlexa";
+const char *password = "12345678";
+const char *homeSSID = "Trojan_test_v2";
+const char *homePassword = "$j2vFHjW^tM!JV2$vw!9tGaM";
 
 #if defined(ESP8266)
 ESP8266WebServer server(80);
@@ -43,23 +43,24 @@ bool clientConnected = false;
 const uint16_t IrLed = IRLED_PIN;
 IRsend irsend(IrLed);
 
-const char* devices[] = {
-  "TV",
-  "Skip",
-  "Mute",
-  "Plus",
-  "Minus",
-  "Speakers",
+const char *devices[] = {
+    "TV",
+    "Skip",
+    "Mute",
+    "Plus",
+    "Minus",
+    "Speakers",
 };
 
-#define numDevices (sizeof(devices)/sizeof(char *))
+#define numDevices (sizeof(devices) / sizeof(char *))
 
 volatile int requestedDevice = 0;
 volatile boolean receivedState = false;
 
 fauxmoESP fauxmo;
 
-void handleRoot() {
+void handleRoot()
+{
   String html = "<html><head><style>";
   html += "body { background-color: #292323; color: white; text-align: center; font-family: Arial, sans-serif; }";
   html += "h1 { margin-top: 50px; }";
@@ -92,45 +93,50 @@ void handleRoot() {
   html += "</script>";
   html += "";
 
-server.send(200, "text/html", html);
+  server.send(200, "text/html", html);
 }
 
-void setupFauxmo() {
+void setupFauxmo()
+{
   fauxmo.createServer(true);
   fauxmo.setPort(80);
   fauxmo.enable(true);
 
-  for (unsigned int i = 0; i < numDevices; i++) {
+  for (unsigned int i = 0; i < numDevices; i++)
+  {
     fauxmo.addDevice(devices[i]);
   }
 
-  fauxmo.onSetState([](unsigned char device_id, const char* device_name, bool state, unsigned char value) {
+  fauxmo.onSetState([](unsigned char device_id, const char *device_name, bool state, unsigned char value)
+                    {
     Serial.printf("[MAIN] Device #%d (%s) state: %s value: %d\n", device_id, device_name, state ? "ON" : "OFF", value);
     requestedDevice = device_id + 1;
-    receivedState = state;
-  });
+    receivedState = state; });
 }
 
-void blinkLED() {
+void blinkLED()
+{
   static unsigned long lastBlinkTime = 0;
   const unsigned long blinkInterval = 500;
 
-  if (millis() - lastBlinkTime >= blinkInterval) {
+  if (millis() - lastBlinkTime >= blinkInterval)
+  {
     lastBlinkTime = millis();
     digitalWrite(CONNECTED_LED, !digitalRead(CONNECTED_LED));
   }
 }
 
-void setup() {
-  #if defined(ESP8266) && defined(ESP01_1M)
+void setup()
+{
+#if defined(ESP8266) && defined(ESP01_1M)
   pinMode(3, FUNCTION_3);
-  #endif
+#endif
 
-  #if defined(ESP8266) && defined(ESP01_1M)
+#if defined(ESP8266) && defined(ESP01_1M)
   Serial.begin(115200, SERIAL_8N1, SERIAL_TX_ONLY);
-  #elif defined(ESP32)
+#elif defined(ESP32)
   Serial.begin(115200);
-  #endif
+#endif
 
   irsend.begin();
 
@@ -147,30 +153,36 @@ void setup() {
   httpUpdater.setup(&server);
 
   hotspotStartTime = millis();
-
 }
 
-void loop() {
-if (WiFi.getMode() == WIFI_AP) {
+void loop()
+{
+  if (WiFi.getMode() == WIFI_AP)
+  {
     server.handleClient();
-    blinkLED();  // Call the blinkLED() function to blink the LED when the hotspot is on
 
-
-    if (WiFi.softAPgetStationNum() > 0) {
+    if (WiFi.softAPgetStationNum() > 0)
+    {
       clientConnected = true;
+      digitalWrite(CONNECTED_LED, LOW); // Turn off the LED when a device is connected
+    }
+    else
+    {
+      clientConnected = false;
+      blinkLED(); // Blink the LED when no device is connected
     }
 
-    if (millis() - hotspotStartTime >= hotspotDuration && !clientConnected) {
+    if (millis() - hotspotStartTime >= hotspotDuration && !clientConnected)
+    {
       WiFi.softAPdisconnect();
       server.close();
       Serial.println("Hotspot closed");
 
-      digitalWrite(CONNECTED_LED, HIGH);
-
       WiFi.begin(homeSSID, homePassword);
       Serial.println("Connecting to home network");
 
-      while (WiFi.status() != WL_CONNECTED) {
+      while (WiFi.status() != WL_CONNECTED)
+      {
         delay(1000);
         Serial.println("Connecting to home network...");
       }
@@ -181,31 +193,43 @@ if (WiFi.getMode() == WIFI_AP) {
 
       setupFauxmo();
     }
-  } else {
+  }
+  else
+  {
     fauxmo.handle();
 
-    switch (requestedDevice) {
-      case 0:
-        break;
-      case 1: irsend.sendSAMSUNG(0xE0E040BF, 32);
-        break;
-      case 2: irsend.sendSAMSUNG(0xE0E016E9, 32);
-        break;
-      case 3: irsend.sendEpson(0x8322EE11, 32);
-        break;
-      case 4: irsend.sendEpson(0x8322E21D, 32);
-        break;
-      case 5: irsend.sendEpson(0x8322E31C, 32);
-        break;
-      case 6: irsend.sendEpson(0x8322E11E, 32);
-        break;
+    digitalWrite(CONNECTED_LED, HIGH); // Turn on the LED when connected to the home network
+
+    switch (requestedDevice)
+    {
+    case 0:
+      break;
+    case 1:
+      irsend.sendSAMSUNG(0xE0E040BF, 32);
+      break;
+    case 2:
+      irsend.sendSAMSUNG(0xE0E016E9, 32);
+      break;
+    case 3:
+      irsend.sendEpson(0x8322EE11, 32);
+      break;
+    case 4:
+      irsend.sendEpson(0x8322E21D, 32);
+      break;
+    case 5:
+      irsend.sendEpson(0x8322E31C, 32);
+      break;
+    case 6:
+      irsend.sendEpson(0x8322E11E, 32);
+      break;
     }
 
     requestedDevice = 0;
   }
 
-  static unsigned long last = millis();     
-  if (millis() - last > 5000) {
+  static unsigned long last = millis();
+  if (millis() - last > 5000)
+  {
     last = millis();
     Serial.printf("[MAIN] Free heap: %d bytes\n", ESP.getFreeHeap());
   }
