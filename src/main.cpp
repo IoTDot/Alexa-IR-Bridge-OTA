@@ -1,8 +1,8 @@
-// actions test
 #include <Arduino.h>
 #include "fauxmoESP.h"
 #include <IRremoteESP8266.h>
 #include <IRsend.h>
+#include <WiFiManager.h>
 
 #if defined(ESP8266)
 #include <ESP8266WiFi.h>
@@ -24,8 +24,6 @@
 
 const char *ssid = "IrAlexa";
 const char *password = "12345678";
-const char *homeSSID = "Trojan_test_v2";
-const char *homePassword = "$j2vFHjW^tM!JV2$vw!9tGaM";
 
 #if defined(ESP8266)
 ESP8266WebServer server(80);
@@ -34,10 +32,6 @@ ESP8266HTTPUpdateServer httpUpdater;
 WebServer server(80);
 HTTPUpdateServer httpUpdater;
 #endif
-
-unsigned long hotspotStartTime = 0;
-const unsigned long hotspotDuration = 15000;
-bool clientConnected = false;
 
 #define CONNECTED_LED 2
 const uint16_t IrLed = IRLED_PIN;
@@ -58,6 +52,8 @@ volatile int requestedDevice = 0;
 volatile boolean receivedState = false;
 
 fauxmoESP fauxmo;
+
+WiFiManager wifiManager;
 
 void handleRoot()
 {
@@ -91,146 +87,181 @@ void handleRoot()
   html += "fileName.textContent = event.target.files[0].name || 'No file chosen';";
   html += "});";
   html += "</script>";
-  html += "";
+  html += "<br><br>";
+  html += "<h2>Wi-Fi Settings</h2>";
+  html += "<form action='/wifi' method='post'>";
+  html += "<input type='submit' value='Configure Wi-Fi'>";
+  html += "</form>";
+  html += "</body></html>";
 
   server.send(200, "text/html", html);
 }
 
-void setupFauxmo()
+void handleWiFi()
 {
-  fauxmo.createServer(true);
-  fauxmo.setPort(80);
-  fauxmo.enable(true);
+  String html = "<html><head><style>";
+  html += "body { background-color: #292323; color: white; text-align: center; font-family: Arial, sans-serif; }";
+  html += "h1 { margin-top: 50px; }";
+  html += "input[type='text'], input[type='password'] { width: 300px; padding: 10px; margin: 10px; }";
+  html += "input[type='submit'] { background-color: white; color: black; padding: 10px 20px; border: none; cursor: pointer; font-size: 16px; }";
+  html += "</style></head><body>";
+  html += "<h1>Wi-Fi Configuration</h1>";
+  html += "<form method='post' action='/save'>";
+  html += "<select name='ssid'>";
 
-  for (unsigned int i = 0; i < numDevices; i++)
+  int n = WiFi.scanNetworks();
+  for (int i = 0; i < n; i++)
   {
-    fauxmo.addDevice(devices[i]);
+    html += "<option value='" + WiFi.SSID(i) + "'>" + WiFi.SSID(i) + "</option>";
   }
 
-  fauxmo.onSetState([](unsigned char device_id, const char *device_name, bool state, unsigned char value)
-                    {
-    Serial.printf("[MAIN] Device #%d (%s) state: %s value: %d\n", device_id, device_name, state ? "ON" : "OFF", value);
-    requestedDevice = device_id + 1;
-    receivedState = state; });
+  html += "</select><br>";
+  html += "<input type='password' name='pass' placeholder='Wi-Fi Password'><br>";
+  html += "<input type='submit' value='Save'>";
+  html += "</form>";
+  html += "</body></html>";
+
+  server.send(200, "text/html", html);
+}
+
+void handleSave()
+{
+  String ssid = server.arg("ssid");
+  String pass = server.arg("pass");
+
+  if (ssid.length() > 0 && pass.length() > 0)
+  {
+    WiFi.begin(ssid.c_str(), pass.c_str());
+
+    int timeout = 10; // 10 seconds
+    while (WiFi.status() != WL_CONNECTED && timeout > 0)
+    {
+      delay(1000);
+      timeout--;
+    }
+
+    if (WiFi.status() == WL_CONNECTED)
+    {
+      Serial.println("Connected to Wi-Fi");
+      Serial.print("IP address: ");
+      Serial.println(WiFi.localIP());
+      server.sendHeader("Location", "/");
+      server.send(303);
+    }
+    else
+    {
+      Serial.println("Failed to connect to Wi-Fi");
+      server.sendHeader("Location", "/wifi");
+      server.send(303);
+    }
+  }
+  else
+  {
+    server.sendHeader("Location", "/wifi");
+    server.send(303);
+  }
+}
+
+void setupFauxmo()
+{
+fauxmo.createServer(true);
+fauxmo.setPort(80);
+fauxmo.enable(true);
+
+for (unsigned int i = 0; i < numDevices; i++)
+{
+fauxmo.addDevice(devices[i]);
+}
+
+fauxmo.onSetState([](unsigned char device_id, const char *device_name, bool state, unsigned char value)
+{
+Serial.printf("[MAIN] Device #%d (%s) state: %s value: %d\n", device_id, device_name, state ? "ON" : "OFF", value);
+requestedDevice = device_id + 1;
+receivedState = state; });
 }
 
 void blinkLED()
 {
-  static unsigned long lastBlinkTime = 0;
-  const unsigned long blinkInterval = 500;
+static unsigned long lastBlinkTime = 0;
+const unsigned long blinkInterval = 500;
 
-  if (millis() - lastBlinkTime >= blinkInterval)
-  {
-    lastBlinkTime = millis();
-    digitalWrite(CONNECTED_LED, !digitalRead(CONNECTED_LED));
-  }
+if (millis() - lastBlinkTime >= blinkInterval)
+{
+lastBlinkTime = millis();
+digitalWrite(CONNECTED_LED, !digitalRead(CONNECTED_LED));
+}
 }
 
 void setup()
 {
 #if defined(ESP8266) && defined(ESP01_1M)
-  pinMode(3, FUNCTION_3);
+pinMode(3, FUNCTION_3);
 #endif
 
 #if defined(ESP8266) && defined(ESP01_1M)
-  Serial.begin(115200, SERIAL_8N1, SERIAL_TX_ONLY);
+Serial.begin(115200, SERIAL_8N1, SERIAL_TX_ONLY);
 #elif defined(ESP32)
-  Serial.begin(115200);
+Serial.begin(115200);
 #endif
 
-  irsend.begin();
+irsend.begin();
 
-  pinMode(CONNECTED_LED, OUTPUT);
-  digitalWrite(CONNECTED_LED, LOW);
+pinMode(CONNECTED_LED, OUTPUT);
+digitalWrite(CONNECTED_LED, LOW);
 
-  WiFi.softAP(ssid, password);
-  Serial.print("Hotspot created. IP address: ");
-  Serial.println(WiFi.softAPIP());
+wifiManager.autoConnect(ssid, password);
+
+Serial.println("Connected to Wi-Fi");
+Serial.print("IP address: ");
+Serial.println(WiFi.localIP());
 
   server.on("/", handleRoot);
+  server.on("/wifi", handleWiFi);
+  server.on("/save", handleSave);
   server.begin();
 
-  httpUpdater.setup(&server);
+httpUpdater.setup(&server);
 
-  hotspotStartTime = millis();
+setupFauxmo();
 }
 
 void loop()
 {
-  if (WiFi.getMode() == WIFI_AP)
-  {
-    server.handleClient();
+fauxmo.handle();
+server.handleClient();
 
-    if (WiFi.softAPgetStationNum() > 0)
-    {
-      clientConnected = true;
-      digitalWrite(CONNECTED_LED, LOW); // Turn off the LED when a device is connected
-    }
-    else
-    {
-      clientConnected = false;
-      blinkLED(); // Blink the LED when no device is connected
-    }
+digitalWrite(CONNECTED_LED, HIGH); // Turn on the LED when connected to the home network
 
-    if (millis() - hotspotStartTime >= hotspotDuration && !clientConnected)
-    {
-      WiFi.softAPdisconnect();
-      server.close();
-      Serial.println("Hotspot closed");
+switch (requestedDevice)
+{
+case 0:
+break;
+case 1:
+irsend.sendSAMSUNG(0xE0E040BF, 32);
+break;
+case 2:
+irsend.sendSAMSUNG(0xE0E016E9, 32);
+break;
+case 3:
+irsend.sendEpson(0x8322EE11, 32);
+break;
+case 4:
+irsend.sendEpson(0x8322E21D, 32);
+break;
+case 5:
+irsend.sendEpson(0x8322E31C, 32);
+break;
+case 6:
+irsend.sendEpson(0x8322E11E, 32);
+break;
+}
 
-      WiFi.begin(homeSSID, homePassword);
-      Serial.println("Connecting to home network");
+requestedDevice = 0;
 
-      while (WiFi.status() != WL_CONNECTED)
-      {
-        delay(1000);
-        Serial.println("Connecting to home network...");
-      }
-
-      Serial.println("Connected to home network");
-      Serial.print("IP address: ");
-      Serial.println(WiFi.localIP());
-
-      setupFauxmo();
-    }
-  }
-  else
-  {
-    fauxmo.handle();
-
-    digitalWrite(CONNECTED_LED, HIGH); // Turn on the LED when connected to the home network
-
-    switch (requestedDevice)
-    {
-    case 0:
-      break;
-    case 1:
-      irsend.sendSAMSUNG(0xE0E040BF, 32);
-      break;
-    case 2:
-      irsend.sendSAMSUNG(0xE0E016E9, 32);
-      break;
-    case 3:
-      irsend.sendEpson(0x8322EE11, 32);
-      break;
-    case 4:
-      irsend.sendEpson(0x8322E21D, 32);
-      break;
-    case 5:
-      irsend.sendEpson(0x8322E31C, 32);
-      break;
-    case 6:
-      irsend.sendEpson(0x8322E11E, 32);
-      break;
-    }
-
-    requestedDevice = 0;
-  }
-
-  static unsigned long last = millis();
-  if (millis() - last > 5000)
-  {
-    last = millis();
-    Serial.printf("[MAIN] Free heap: %d bytes\n", ESP.getFreeHeap());
-  }
+static unsigned long last = millis();
+if (millis() - last > 5000)
+{
+last = millis();
+Serial.printf("[MAIN] Free heap: %d bytes\n", ESP.getFreeHeap());
+}
 }
