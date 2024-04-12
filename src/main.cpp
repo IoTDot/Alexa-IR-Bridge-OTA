@@ -131,6 +131,19 @@ void handleSave()
 
   if (ssid.length() > 0 && pass.length() > 0)
   {
+    String html = "<html><head><style>";
+    html += "body { background-color: #292323; color: white; text-align: center; font-family: Arial, sans-serif; }";
+    html += "h1 { margin-top: 50px; }";
+    html += "</style></head><body>";
+    html += "<h1>Wi-Fi Settings Saved</h1>";
+    html += "<p>The device will now attempt to connect to the new network</p>";
+    html += "<p>You can close this page</p>";
+    html += "</body></html>";
+
+    server.send(200, "text/html", html);
+
+    delay(1000);
+
     WiFi.begin(ssid.c_str(), pass.c_str());
 
     int timeout = 10; // 10 seconds
@@ -145,14 +158,10 @@ void handleSave()
       Serial.println("Connected to Wi-Fi");
       Serial.print("IP address: ");
       Serial.println(WiFi.localIP());
-      server.sendHeader("Location", "/");
-      server.send(303);
     }
     else
     {
       Serial.println("Failed to connect to Wi-Fi");
-      server.sendHeader("Location", "/wifi");
-      server.send(303);
     }
   }
   else
@@ -161,6 +170,7 @@ void handleSave()
     server.send(303);
   }
 }
+
 
 void setupFauxmo()
 {
