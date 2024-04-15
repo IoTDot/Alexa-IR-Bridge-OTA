@@ -3,7 +3,12 @@
 #include <IRremoteESP8266.h>
 #include <IRsend.h>
 #include <WiFiManager.h>
+<<<<<<< HEAD
 #include <vector>
+=======
+#include <ArduinoJson.h>
+#include <FS.h>
+>>>>>>> 2d680f7 (web interface upgrade test)
 
 #if defined(ESP8266)
 #include <ESP8266WiFi.h>
@@ -40,9 +45,15 @@ IRsend irsend(IrLed);
 
 struct Device {
   String name;
+<<<<<<< HEAD
   String irCode;
   uint16_t irBits;
   String irProtocol;
+=======
+  uint64_t code;
+  uint16_t bits;
+  decode_type_t protocol;
+>>>>>>> 2d680f7 (web interface upgrade test)
 };
 
 std::vector<Device> devices;
@@ -54,6 +65,73 @@ fauxmoESP fauxmo;
 
 WiFiManager wifiManager;
 
+<<<<<<< HEAD
+=======
+void loadDevices() {
+  if (SPIFFS.begin()) {
+    if (SPIFFS.exists("/devices.json")) {
+      File file = SPIFFS.open("/devices.json", "r");
+      if (file) {
+        DynamicJsonDocument doc(1024);
+        DeserializationError error = deserializeJson(doc, file);
+        if (error) {
+          Serial.println("Failed to parse devices file");
+        } else {
+          JsonArray array = doc.as<JsonArray>();
+          for (JsonVariant v : array) {
+            Device device;
+            device.name = v["name"].as<String>();
+            device.code = v["code"].as<uint64_t>();
+            device.bits = v["bits"].as<uint16_t>();
+            device.protocol = (decode_type_t)v["protocol"].as<int>();
+            devices.push_back(device);
+          }
+        }
+        file.close();
+      }
+    }
+    SPIFFS.end();
+  }
+}
+
+void saveDevices() {
+  DynamicJsonDocument doc(1024);
+  JsonArray array = doc.to<JsonArray>();
+  for (Device device : devices) {
+    JsonObject obj = array.createNestedObject();
+    obj["name"] = device.name;
+    obj["code"] = device.code;
+    obj["bits"] = device.bits;
+    obj["protocol"] = device.protocol;
+  }
+
+  if (SPIFFS.begin()) {
+    File file = SPIFFS.open("/devices.json", "w");
+    if (file) {
+      serializeJson(doc, file);
+      file.close();
+    }
+    SPIFFS.end();
+  }
+}
+
+void setupFauxmo() {
+  fauxmo.createServer(true);
+  fauxmo.setPort(80);
+  fauxmo.enable(true);
+
+  for (Device device : devices) {
+    fauxmo.addDevice(device.name.c_str());
+  }
+
+fauxmo.onSetState([](unsigned char device_id, const char *device_name, bool state, unsigned char value) {
+  Serial.printf("[MAIN] Device #%d (%s) state: %s value: %d\n", device_id, device_name, state ? "ON" : "OFF", value);
+  requestedDevice = device_id;
+  receivedState = state;
+});
+}
+
+>>>>>>> 2d680f7 (web interface upgrade test)
 void handleRoot() {
   String html = "<html><head><style>";
   html += "body { background-color: #292323; color: white; text-align: center; font-family: Arial, sans-serif; }";
@@ -96,6 +174,7 @@ void handleRoot() {
   html += "<input type='submit' value='Configure Wi-Fi'>";
   html += "</form>";
   html += "<br><br>";
+<<<<<<< HEAD
   html += "<h2>Device List</h2>";
   html += "<table>";
   html += "<tr><th>Name</th><th>IR Code</th><th>IR Bits</th><th>IR Protocol</th><th>Action</th></tr>";
@@ -129,6 +208,13 @@ html += "</select><br>";
 html += "<input type='submit' value='Add Device'>";
 html += "</form>";
 html += "</body></html>";
+=======
+  html += "<h2>Device Settings</h2>";
+  html += "<form action='/devices' method='post'>";
+  html += "<input type='submit' value='Configure Devices'>";
+  html += "</form>";
+  html += "</body></html>";
+>>>>>>> 2d680f7 (web interface upgrade test)
 
 server.send(200, "text/html", html);
 }
@@ -207,6 +293,7 @@ void handleSave()
   }
 }
 
+<<<<<<< HEAD
 void setupFauxmo() {
 fauxmo.createServer(true);
 fauxmo.setPort(80);
@@ -279,6 +366,81 @@ digitalWrite(CONNECTED_LED, !digitalRead(CONNECTED_LED));
 }
 
 void setup() {
+=======
+void handleDevices() {
+  String html = "<html><head><style>";
+  html += "body { background-color: #292323; color: white; text-align: center; font-family: Arial, sans-serif; }";
+  html += "h1 { margin-top: 50px; }";
+  html += "input[type='text'], input[type='number'], select { width: 300px; padding: 10px; margin: 10px; }";
+  html += "input[type='submit'] { background-color: white; color: black; padding: 10px 20px; border: none; cursor: pointer; font-size: 16px; }";
+  html += "</style></head><body>";
+  html += "<h1>Device Configuration</h1>";
+  html += "<form method='post' action='/saveDevices'>";
+  
+  for (size_t i = 0; i < devices.size(); i++) {
+    html += "<h2>Device " + String(i + 1) + "</h2>";
+    html += "<input type='text' name='name" + String(i) + "' value='" + devices[i].name + "' placeholder='Device Name'><br>";
+    html += "<input type='text' name='code" + String(i) + "' value='" + String(devices[i].code, HEX) + "' placeholder='IR Code (hex)'><br>";
+    html += "<input type='number' name='bits" + String(i) + "' value='" + String(devices[i].bits) + "' placeholder='Bits'><br>";
+    html += "<select name='protocol" + String(i) + "'>";
+    html += "<option value='" + String(decode_type_t::NEC) + "'" + (devices[i].protocol == decode_type_t::NEC ? " selected" : "") + ">NEC</option>";
+    html += "<option value='" + String(decode_type_t::SONY) + "'" + (devices[i].protocol == decode_type_t::SONY ? " selected" : "") + ">SONY</option>";
+    html += "<option value='" + String(decode_type_t::RC5) + "'" + (devices[i].protocol == decode_type_t::RC5 ? " selected" : "") + ">RC5</option>";
+    html += "<option value='" + String(decode_type_t::RC6) + "'" + (devices[i].protocol == decode_type_t::RC6 ? " selected" : "") + ">RC6</option>";
+    html += "<option value='" + String(decode_type_t::DISH) + "'" + (devices[i].protocol == decode_type_t::DISH ? " selected" : "") + ">DISH</option>";
+    html += "<option value='" + String(decode_type_t::SHARP) + "'" + (devices[i].protocol == decode_type_t::SHARP ? " selected" : "") + ">SHARP</option>";
+    html += "<option value='" + String(decode_type_t::SAMSUNG) + "'" + (devices[i].protocol == decode_type_t::SAMSUNG ? " selected" : "") + ">SAMSUNG</option>";
+    html += "</select><br>";
+  }
+
+  html += "<br>";
+  html += "<input type='submit' value='Save'>";
+  html += "</form>";
+  html += "<br><br>";
+  html += "<form method='post' action='/addDevice'>";
+  html += "<input type='submit' value='Add Device'>";
+  html += "</form>";
+  html += "</body></html>";
+
+  server.send(200, "text/html", html);
+}
+
+void handleSaveDevices() {
+  for (size_t i = 0; i < devices.size(); i++) {
+    String nameParam = "name" + String(i);
+    String codeParam = "code" + String(i);
+    String bitsParam = "bits" + String(i);
+    String protocolParam = "protocol" + String(i);
+
+    if (server.hasArg(nameParam) && server.hasArg(codeParam) && server.hasArg(bitsParam) && server.hasArg(protocolParam)) {
+      devices[i].name = server.arg(nameParam);
+      devices[i].code = strtoul(server.arg(codeParam).c_str(), NULL, 16);
+     devices[i].bits = server.arg(bitsParam).toInt();
+devices[i].protocol = (decode_type_t)server.arg(protocolParam).toInt();
+}
+}
+
+saveDevices();
+
+server.sendHeader("Location", "/devices");
+server.send(303);
+}
+
+void handleAddDevice() {
+Device device;
+device.name = "New Device";
+device.code = 0;
+device.bits = 0;
+device.protocol = decode_type_t::NEC;
+devices.push_back(device);
+
+server.sendHeader("Location", "/devices");
+server.send(303);
+}
+
+void setup() {
+// ... (previous setup code remains the same)
+>>>>>>> 2d680f7 (web interface upgrade test)
 #if defined(ESP8266) && defined(ESP01_1M)
 pinMode(3, FUNCTION_3);
 #endif
@@ -299,11 +461,17 @@ wifiManager.autoConnect(ssid, password);
 Serial.println("Connected to Wi-Fi");
 Serial.print("IP address: ");
 Serial.println(WiFi.localIP());
+loadDevices();
 
 server.on("/", handleRoot);
 server.on("/wifi", handleWiFi);
 server.on("/save", handleSave);
 server.on("/devices", handleDevices);
+<<<<<<< HEAD
+=======
+server.on("/saveDevices", handleSaveDevices);
+server.on("/addDevice", handleAddDevice);
+>>>>>>> 2d680f7 (web interface upgrade test)
 server.begin();
 
 httpUpdater.setup(&server);
@@ -312,11 +480,17 @@ setupFauxmo();
 }
 
 void loop() {
+<<<<<<< HEAD
   fauxmo.handle();
   server.handleClient();
+=======
+fauxmo.handle();
+server.handleClient();
+>>>>>>> 2d680f7 (web interface upgrade test)
 
   digitalWrite(CONNECTED_LED, HIGH); // Turn on the LED when connected to the home network
 
+<<<<<<< HEAD
  if (requestedDevice > 0 && requestedDevice <= static_cast<int>(devices.size())) {
     const auto& device = devices[requestedDevice - 1];
     if (device.irProtocol == "SAMSUNG") {
@@ -334,4 +508,39 @@ void loop() {
     last = millis();
     Serial.printf("[MAIN] Free heap: %d bytes\n", ESP.getFreeHeap());
   }
+=======
+if (requestedDevice >= 0 && requestedDevice < devices.size()) {
+Device device = devices[requestedDevice];
+switch (device.protocol) {
+case decode_type_t::NEC:
+irsend.sendNEC(device.code, device.bits);
+break;
+case decode_type_t::SONY:
+irsend.sendSony(device.code, device.bits);
+break;
+case decode_type_t::RC5:
+irsend.sendRC5(device.code, device.bits);
+break;
+case decode_type_t::RC6:
+irsend.sendRC6(device.code, device.bits);
+break;
+case decode_type_t::DISH:
+irsend.sendDISH(device.code, device.bits);
+break;
+case decode_type_t::SHARP:
+irsend.sendSharpRaw(device.code, device.bits);
+break;
+case decode_type_t::SAMSUNG:
+irsend.sendSAMSUNG(device.code, device.bits);
+break;
+}
+requestedDevice = -1;
+}
+
+static unsigned long last = millis();
+if (millis() - last > 5000) {
+last = millis();
+Serial.printf("[MAIN] Free heap: %d bytes\n", ESP.getFreeHeap());
+}
+>>>>>>> 2d680f7 (web interface upgrade test)
 }
