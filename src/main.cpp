@@ -3,6 +3,7 @@
 #include <IRremoteESP8266.h>
 #include <IRsend.h>
 #include <WiFiManager.h>
+#include <vector>
 
 #if defined(ESP8266)
 #include <ESP8266WiFi.h>
@@ -37,16 +38,14 @@ HTTPUpdateServer httpUpdater;
 const uint16_t IrLed = IRLED_PIN;
 IRsend irsend(IrLed);
 
-const char *devices[] = {
-    "TV",
-    "Skip",
-    "Mute",
-    "Plus",
-    "Minus",
-    "Speakers",
+struct Device {
+  String name;
+  String irCode;
+  uint16_t irBits;
+  String irProtocol;
 };
 
-#define numDevices (sizeof(devices) / sizeof(char *))
+std::vector<Device> devices;
 
 volatile int requestedDevice = 0;
 volatile boolean receivedState = false;
@@ -55,13 +54,17 @@ fauxmoESP fauxmo;
 
 WiFiManager wifiManager;
 
-void handleRoot()
-{
+void handleRoot() {
   String html = "<html><head><style>";
   html += "body { background-color: #292323; color: white; text-align: center; font-family: Arial, sans-serif; }";
   html += "h1 { margin-top: 50px; }";
   html += ".custom-file-input { display: none; }";
   html += ".custom-file-label, input[type='submit'] { margin-top: 20px; background-color: white; color: black; padding: 10px 20px; border: none; cursor: pointer; font-size: 16px; }";
+  html += "input[type='text'], input[type='number'], select { margin-top: 10px; padding: 5px; font-size: 16px; }";
+  html += "table { margin: 0 auto; border-collapse: collapse; }";
+  html += "th, td { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }";
+  html += "tr:hover { background-color: #f5f5f5; }";
+  html += ".delete-button { background-color: #f44336; color: white; border: none; padding: 5px 10px; text-align: center; text-decoration: none; display: inline-block; font-size: 14px; margin: 4px 2px; cursor: pointer; }";
   html += "</style></head><body>";
   html += "<h1>IrAlexa</h1>";
   html += "<h2>FIRMWARE UPDATE</h2>";
@@ -92,9 +95,42 @@ void handleRoot()
   html += "<form action='/wifi' method='post'>";
   html += "<input type='submit' value='Configure Wi-Fi'>";
   html += "</form>";
-  html += "</body></html>";
+  html += "<br><br>";
+  html += "<h2>Device List</h2>";
+  html += "<table>";
+  html += "<tr><th>Name</th><th>IR Code</th><th>IR Bits</th><th>IR Protocol</th><th>Action</th></tr>";
+  for (size_t i = 0; i < devices.size(); i++) {
+    html += "<tr>";
+    html += "<td>" + devices[i].name + "</td>";
+    html += "<td>" + devices[i].irCode + "</td>";
+    html += "<td>" + String(devices[i].irBits) + "</td>";
+    html += "<td>" + devices[i].irProtocol + "</td>";
+    html += "<td>";
+    html += "<form method='POST' action='/devices'>";
+html += "<input type='hidden' name='index' value='" + String(i) + "'>";
+html += "<input type='submit' name='action' value='Edit'>";
+html += "<input type='submit' name='action' value='Delete' class='delete-button'>";
+html += "</form>";
+html += "</td>";
+html += "</tr>";
+}
+html += "</table>";
+html += "<br><br>";
+html += "<h2>Add New Device</h2>";
+html += "<form method='POST' action='/devices'>";
+html += "<input type='text' name='name' placeholder='Device Name'><br>";
+html += "<input type='text' name='irCode' placeholder='IR Code'><br>";
+html += "<input type='number' name='irBits' placeholder='IR Bits'><br>";
+html += "<select name='irProtocol'>";
+html += "<option value='SAMSUNG'>SAMSUNG</option>";
+html += "<option value='EPSON'>EPSON</option>";
+// Add more options for other IR protocols as needed
+html += "</select><br>";
+html += "<input type='submit' value='Add Device'>";
+html += "</form>";
+html += "</body></html>";
 
-  server.send(200, "text/html", html);
+server.send(200, "text/html", html);
 }
 
 void handleWiFi()
@@ -171,39 +207,78 @@ void handleSave()
   }
 }
 
-
-void setupFauxmo()
-{
+void setupFauxmo() {
 fauxmo.createServer(true);
 fauxmo.setPort(80);
 fauxmo.enable(true);
 
-for (unsigned int i = 0; i < numDevices; i++)
-{
-fauxmo.addDevice(devices[i]);
+for (const auto& device : devices) {
+fauxmo.addDevice(device.name.c_str());
 }
 
-fauxmo.onSetState([](unsigned char device_id, const char *device_name, bool state, unsigned char value)
-{
+fauxmo.onSetState([](unsigned char device_id, const char *device_name, bool state, unsigned char value) {
 Serial.printf("[MAIN] Device #%d (%s) state: %s value: %d\n", device_id, device_name, state ? "ON" : "OFF", value);
 requestedDevice = device_id + 1;
-receivedState = state; });
+receivedState = state;
+});
 }
 
-void blinkLED()
-{
+void handleDevices() {
+  if (server.method() == HTTP_GET) {
+    // Return the list of devices as JSON
+    String json = "[";
+    for (const auto& device : devices) {
+      json += "{\"name\":\"" + device.name + "\",\"irCode\":\"" + device.irCode + "\",\"irBits\":" + String(device.irBits) + ",\"irProtocol\":\"" + device.irProtocol + "\"},";
+    }
+    json.remove(json.length() - 1);
+    json += "]";
+    server.send(200, "application/json", json);
+  } else if (server.method() == HTTP_POST) {
+    // Add a new device
+    String name = server.arg("name");
+    String irCode = server.arg("irCode");
+    uint16_t irBits = server.arg("irBits").toInt();
+    String irProtocol = server.arg("irProtocol");
+    devices.push_back({name, irCode, irBits, irProtocol});
+    setupFauxmo();
+    server.send(200, "text/plain", "Device added");
+  } else if (server.method() == HTTP_PUT) {
+    // Update an existing device
+    int index = server.arg("index").toInt();
+    if (index >= 0 && index < static_cast<int>(devices.size())) {
+      devices[index].name = server.arg("name");
+      devices[index].irCode = server.arg("irCode");
+      devices[index].irBits = server.arg("irBits").toInt();
+      devices[index].irProtocol = server.arg("irProtocol");
+      setupFauxmo();
+      server.send(200, "text/plain", "Device updated");
+    } else {
+      server.send(404, "text/plain", "Device not found");
+    }
+  } else if (server.method() == HTTP_DELETE) {
+    // Delete a device
+    int index = server.arg("index").toInt();
+    if (index >= 0 && index < static_cast<int>(devices.size())) {
+      devices.erase(devices.begin() + index);
+      setupFauxmo();
+      server.send(200, "text/plain", "Device deleted");
+    } else {
+      server.send(404, "text/plain", "Device not found");
+    }
+  }
+}
+
+void blinkLED() {
 static unsigned long lastBlinkTime = 0;
 const unsigned long blinkInterval = 500;
 
-if (millis() - lastBlinkTime >= blinkInterval)
-{
+if (millis() - lastBlinkTime >= blinkInterval) {
 lastBlinkTime = millis();
 digitalWrite(CONNECTED_LED, !digitalRead(CONNECTED_LED));
 }
 }
 
-void setup()
-{
+void setup() {
 #if defined(ESP8266) && defined(ESP01_1M)
 pinMode(3, FUNCTION_3);
 #endif
@@ -225,53 +300,38 @@ Serial.println("Connected to Wi-Fi");
 Serial.print("IP address: ");
 Serial.println(WiFi.localIP());
 
-  server.on("/", handleRoot);
-  server.on("/wifi", handleWiFi);
-  server.on("/save", handleSave);
-  server.begin();
+server.on("/", handleRoot);
+server.on("/wifi", handleWiFi);
+server.on("/save", handleSave);
+server.on("/devices", handleDevices);
+server.begin();
 
 httpUpdater.setup(&server);
 
 setupFauxmo();
 }
 
-void loop()
-{
-fauxmo.handle();
-server.handleClient();
+void loop() {
+  fauxmo.handle();
+  server.handleClient();
 
-digitalWrite(CONNECTED_LED, HIGH); // Turn on the LED when connected to the home network
+  digitalWrite(CONNECTED_LED, HIGH); // Turn on the LED when connected to the home network
 
-switch (requestedDevice)
-{
-case 0:
-break;
-case 1:
-irsend.sendSAMSUNG(0xE0E040BF, 32);
-break;
-case 2:
-irsend.sendSAMSUNG(0xE0E016E9, 32);
-break;
-case 3:
-irsend.sendEpson(0x8322EE11, 32);
-break;
-case 4:
-irsend.sendEpson(0x8322E21D, 32);
-break;
-case 5:
-irsend.sendEpson(0x8322E31C, 32);
-break;
-case 6:
-irsend.sendEpson(0x8322E11E, 32);
-break;
-}
+ if (requestedDevice > 0 && requestedDevice <= static_cast<int>(devices.size())) {
+    const auto& device = devices[requestedDevice - 1];
+    if (device.irProtocol == "SAMSUNG") {
+      irsend.sendSAMSUNG(strtoul(device.irCode.c_str(), nullptr, 16), device.irBits);
+    } else if (device.irProtocol == "EPSON") {
+      irsend.sendEpson(strtoul(device.irCode.c_str(), nullptr, 16), device.irBits);
+    }
+    // Add more conditions for other IR protocols as needed
+  }
 
-requestedDevice = 0;
+  requestedDevice = 0;
 
-static unsigned long last = millis();
-if (millis() - last > 5000)
-{
-last = millis();
-Serial.printf("[MAIN] Free heap: %d bytes\n", ESP.getFreeHeap());
-}
+  static unsigned long last = millis();
+  if (millis() - last > 5000) {
+    last = millis();
+    Serial.printf("[MAIN] Free heap: %d bytes\n", ESP.getFreeHeap());
+  }
 }
