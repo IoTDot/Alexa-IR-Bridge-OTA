@@ -5,6 +5,7 @@
 #include <WiFiManager.h>
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 #include <vector>
 =======
 #include <ArduinoJson.h>
@@ -12,6 +13,8 @@
 >>>>>>> 2d680f7 (web interface upgrade test)
 =======
 >>>>>>> d2815e6 (test)
+=======
+>>>>>>> 134c5fe (test)
 
 #if defined(ESP8266)
 #include <ESP8266WiFi.h>
@@ -47,6 +50,7 @@ const uint16_t IrLed = IRLED_PIN;
 IRsend irsend(IrLed);
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 struct Device {
   String name;
 <<<<<<< HEAD
@@ -59,6 +63,8 @@ struct Device {
   decode_type_t protocol;
 >>>>>>> 2d680f7 (web interface upgrade test)
 =======
+=======
+>>>>>>> 134c5fe (test)
 const char *devices[] = {
     "TV",
     "Skip",
@@ -66,7 +72,10 @@ const char *devices[] = {
     "Plus",
     "Minus",
     "Speakers",
+<<<<<<< HEAD
 >>>>>>> d2815e6 (test)
+=======
+>>>>>>> 134c5fe (test)
 };
 
 #define numDevices (sizeof(devices) / sizeof(char *))
@@ -78,6 +87,7 @@ fauxmoESP fauxmo;
 
 WiFiManager wifiManager;
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 =======
@@ -151,16 +161,15 @@ void handleRoot() {
 void handleRoot()
 {
 >>>>>>> d2815e6 (test)
+=======
+void handleRoot()
+{
+>>>>>>> 134c5fe (test)
   String html = "<html><head><style>";
   html += "body { background-color: #292323; color: white; text-align: center; font-family: Arial, sans-serif; }";
   html += "h1 { margin-top: 50px; }";
   html += ".custom-file-input { display: none; }";
   html += ".custom-file-label, input[type='submit'] { margin-top: 20px; background-color: white; color: black; padding: 10px 20px; border: none; cursor: pointer; font-size: 16px; }";
-  html += "input[type='text'], input[type='number'], select { margin-top: 10px; padding: 5px; font-size: 16px; }";
-  html += "table { margin: 0 auto; border-collapse: collapse; }";
-  html += "th, td { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }";
-  html += "tr:hover { background-color: #f5f5f5; }";
-  html += ".delete-button { background-color: #f44336; color: white; border: none; padding: 5px 10px; text-align: center; text-decoration: none; display: inline-block; font-size: 14px; margin: 4px 2px; cursor: pointer; }";
   html += "</style></head><body>";
   html += "<h1>IrAlexa</h1>";
   html += "<h2>FIRMWARE UPDATE</h2>";
@@ -191,6 +200,7 @@ void handleRoot()
   html += "<form action='/wifi' method='post'>";
   html += "<input type='submit' value='Configure Wi-Fi'>";
   html += "</form>";
+<<<<<<< HEAD
 <<<<<<< HEAD
   html += "<br><br>";
 <<<<<<< HEAD
@@ -236,8 +246,11 @@ html += "</body></html>";
 >>>>>>> d2815e6 (test)
   html += "</body></html>";
 >>>>>>> 2d680f7 (web interface upgrade test)
+=======
+  html += "</body></html>";
+>>>>>>> 134c5fe (test)
 
-server.send(200, "text/html", html);
+  server.send(200, "text/html", html);
 }
 
 void handleWiFi()
@@ -316,77 +329,42 @@ void handleSave()
 
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 void setupFauxmo() {
+=======
+
+void setupFauxmo()
+{
+>>>>>>> 134c5fe (test)
 fauxmo.createServer(true);
 fauxmo.setPort(80);
 fauxmo.enable(true);
 
-for (const auto& device : devices) {
-fauxmo.addDevice(device.name.c_str());
+for (unsigned int i = 0; i < numDevices; i++)
+{
+fauxmo.addDevice(devices[i]);
 }
 
-fauxmo.onSetState([](unsigned char device_id, const char *device_name, bool state, unsigned char value) {
+fauxmo.onSetState([](unsigned char device_id, const char *device_name, bool state, unsigned char value)
+{
 Serial.printf("[MAIN] Device #%d (%s) state: %s value: %d\n", device_id, device_name, state ? "ON" : "OFF", value);
 requestedDevice = device_id + 1;
-receivedState = state;
-});
+receivedState = state; });
 }
 
-void handleDevices() {
-  if (server.method() == HTTP_GET) {
-    // Return the list of devices as JSON
-    String json = "[";
-    for (const auto& device : devices) {
-      json += "{\"name\":\"" + device.name + "\",\"irCode\":\"" + device.irCode + "\",\"irBits\":" + String(device.irBits) + ",\"irProtocol\":\"" + device.irProtocol + "\"},";
-    }
-    json.remove(json.length() - 1);
-    json += "]";
-    server.send(200, "application/json", json);
-  } else if (server.method() == HTTP_POST) {
-    // Add a new device
-    String name = server.arg("name");
-    String irCode = server.arg("irCode");
-    uint16_t irBits = server.arg("irBits").toInt();
-    String irProtocol = server.arg("irProtocol");
-    devices.push_back({name, irCode, irBits, irProtocol});
-    setupFauxmo();
-    server.send(200, "text/plain", "Device added");
-  } else if (server.method() == HTTP_PUT) {
-    // Update an existing device
-    int index = server.arg("index").toInt();
-    if (index >= 0 && index < static_cast<int>(devices.size())) {
-      devices[index].name = server.arg("name");
-      devices[index].irCode = server.arg("irCode");
-      devices[index].irBits = server.arg("irBits").toInt();
-      devices[index].irProtocol = server.arg("irProtocol");
-      setupFauxmo();
-      server.send(200, "text/plain", "Device updated");
-    } else {
-      server.send(404, "text/plain", "Device not found");
-    }
-  } else if (server.method() == HTTP_DELETE) {
-    // Delete a device
-    int index = server.arg("index").toInt();
-    if (index >= 0 && index < static_cast<int>(devices.size())) {
-      devices.erase(devices.begin() + index);
-      setupFauxmo();
-      server.send(200, "text/plain", "Device deleted");
-    } else {
-      server.send(404, "text/plain", "Device not found");
-    }
-  }
-}
-
-void blinkLED() {
+void blinkLED()
+{
 static unsigned long lastBlinkTime = 0;
 const unsigned long blinkInterval = 500;
 
-if (millis() - lastBlinkTime >= blinkInterval) {
+if (millis() - lastBlinkTime >= blinkInterval)
+{
 lastBlinkTime = millis();
 digitalWrite(CONNECTED_LED, !digitalRead(CONNECTED_LED));
 }
 }
 
+<<<<<<< HEAD
 void setup() {
 =======
 void handleDevices() {
@@ -473,6 +451,10 @@ void setup() {
 void setup()
 {
 >>>>>>> d2815e6 (test)
+=======
+void setup()
+{
+>>>>>>> 134c5fe (test)
 #if defined(ESP8266) && defined(ESP01_1M)
 pinMode(3, FUNCTION_3);
 #endif
@@ -495,6 +477,7 @@ Serial.print("IP address: ");
 Serial.println(WiFi.localIP());
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 server.on("/", handleRoot);
 server.on("/wifi", handleWiFi);
 server.on("/save", handleSave);
@@ -506,17 +489,23 @@ server.on("/addDevice", handleAddDevice);
 >>>>>>> 2d680f7 (web interface upgrade test)
 server.begin();
 =======
+=======
+>>>>>>> 134c5fe (test)
   server.on("/", handleRoot);
   server.on("/wifi", handleWiFi);
   server.on("/save", handleSave);
   server.begin();
+<<<<<<< HEAD
 >>>>>>> d2815e6 (test)
+=======
+>>>>>>> 134c5fe (test)
 
 httpUpdater.setup(&server);
 
 setupFauxmo();
 }
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 void loop() {
 <<<<<<< HEAD
@@ -530,9 +519,16 @@ void loop()
 fauxmo.handle();
 server.handleClient();
 >>>>>>> 2d680f7 (web interface upgrade test)
+=======
+void loop()
+{
+fauxmo.handle();
+server.handleClient();
+>>>>>>> 134c5fe (test)
 
-  digitalWrite(CONNECTED_LED, HIGH); // Turn on the LED when connected to the home network
+digitalWrite(CONNECTED_LED, HIGH); // Turn on the LED when connected to the home network
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
  if (requestedDevice > 0 && requestedDevice <= static_cast<int>(devices.size())) {
@@ -544,9 +540,35 @@ server.handleClient();
     }
     // Add more conditions for other IR protocols as needed
   }
+=======
+switch (requestedDevice)
+{
+case 0:
+break;
+case 1:
+irsend.sendSAMSUNG(0xE0E040BF, 32);
+break;
+case 2:
+irsend.sendSAMSUNG(0xE0E016E9, 32);
+break;
+case 3:
+irsend.sendEpson(0x8322EE11, 32);
+break;
+case 4:
+irsend.sendEpson(0x8322E21D, 32);
+break;
+case 5:
+irsend.sendEpson(0x8322E31C, 32);
+break;
+case 6:
+irsend.sendEpson(0x8322E11E, 32);
+break;
+}
+>>>>>>> 134c5fe (test)
 
-  requestedDevice = 0;
+requestedDevice = 0;
 
+<<<<<<< HEAD
   static unsigned long last = millis();
   if (millis() - last > 5000) {
     last = millis();
@@ -586,11 +608,16 @@ break;
 
 requestedDevice = 0;
 
+=======
+>>>>>>> 134c5fe (test)
 static unsigned long last = millis();
 if (millis() - last > 5000)
 {
 last = millis();
 Serial.printf("[MAIN] Free heap: %d bytes\n", ESP.getFreeHeap());
 }
+<<<<<<< HEAD
 >>>>>>> 2d680f7 (web interface upgrade test)
+=======
+>>>>>>> 134c5fe (test)
 }
