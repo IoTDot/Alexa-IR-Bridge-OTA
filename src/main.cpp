@@ -221,6 +221,8 @@ digitalWrite(CONNECTED_LED, LOW);
 
 wifiManager.autoConnect(ssid, password);
 
+WiFi.hostname("IrAlexa");
+
 Serial.println("Connected to Wi-Fi");
 Serial.print("IP address: ");
 Serial.println(WiFi.localIP());
