@@ -4,11 +4,14 @@
 #include <IRsend.h>
 #include <WiFiManager.h>
 <<<<<<< HEAD
+<<<<<<< HEAD
 #include <vector>
 =======
 #include <ArduinoJson.h>
 #include <FS.h>
 >>>>>>> 2d680f7 (web interface upgrade test)
+=======
+>>>>>>> d2815e6 (test)
 
 #if defined(ESP8266)
 #include <ESP8266WiFi.h>
@@ -43,6 +46,7 @@ HTTPUpdateServer httpUpdater;
 const uint16_t IrLed = IRLED_PIN;
 IRsend irsend(IrLed);
 
+<<<<<<< HEAD
 struct Device {
   String name;
 <<<<<<< HEAD
@@ -54,9 +58,18 @@ struct Device {
   uint16_t bits;
   decode_type_t protocol;
 >>>>>>> 2d680f7 (web interface upgrade test)
+=======
+const char *devices[] = {
+    "TV",
+    "Skip",
+    "Mute",
+    "Plus",
+    "Minus",
+    "Speakers",
+>>>>>>> d2815e6 (test)
 };
 
-std::vector<Device> devices;
+#define numDevices (sizeof(devices) / sizeof(char *))
 
 volatile int requestedDevice = 0;
 volatile boolean receivedState = false;
@@ -65,6 +78,7 @@ fauxmoESP fauxmo;
 
 WiFiManager wifiManager;
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 =======
 void loadDevices() {
@@ -133,6 +147,10 @@ fauxmo.onSetState([](unsigned char device_id, const char *device_name, bool stat
 
 >>>>>>> 2d680f7 (web interface upgrade test)
 void handleRoot() {
+=======
+void handleRoot()
+{
+>>>>>>> d2815e6 (test)
   String html = "<html><head><style>";
   html += "body { background-color: #292323; color: white; text-align: center; font-family: Arial, sans-serif; }";
   html += "h1 { margin-top: 50px; }";
@@ -173,6 +191,7 @@ void handleRoot() {
   html += "<form action='/wifi' method='post'>";
   html += "<input type='submit' value='Configure Wi-Fi'>";
   html += "</form>";
+<<<<<<< HEAD
   html += "<br><br>";
 <<<<<<< HEAD
   html += "<h2>Device List</h2>";
@@ -213,6 +232,8 @@ html += "</body></html>";
   html += "<form action='/devices' method='post'>";
   html += "<input type='submit' value='Configure Devices'>";
   html += "</form>";
+=======
+>>>>>>> d2815e6 (test)
   html += "</body></html>";
 >>>>>>> 2d680f7 (web interface upgrade test)
 
@@ -293,6 +314,7 @@ void handleSave()
   }
 }
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 void setupFauxmo() {
 fauxmo.createServer(true);
@@ -392,34 +414,40 @@ void handleDevices() {
     html += "<option value='" + String(decode_type_t::SAMSUNG) + "'" + (devices[i].protocol == decode_type_t::SAMSUNG ? " selected" : "") + ">SAMSUNG</option>";
     html += "</select><br>";
   }
+=======
+>>>>>>> d2815e6 (test)
 
-  html += "<br>";
-  html += "<input type='submit' value='Save'>";
-  html += "</form>";
-  html += "<br><br>";
-  html += "<form method='post' action='/addDevice'>";
-  html += "<input type='submit' value='Add Device'>";
-  html += "</form>";
-  html += "</body></html>";
+void setupFauxmo()
+{
+fauxmo.createServer(true);
+fauxmo.setPort(80);
+fauxmo.enable(true);
 
-  server.send(200, "text/html", html);
+for (unsigned int i = 0; i < numDevices; i++)
+{
+fauxmo.addDevice(devices[i]);
 }
 
-void handleSaveDevices() {
-  for (size_t i = 0; i < devices.size(); i++) {
-    String nameParam = "name" + String(i);
-    String codeParam = "code" + String(i);
-    String bitsParam = "bits" + String(i);
-    String protocolParam = "protocol" + String(i);
+fauxmo.onSetState([](unsigned char device_id, const char *device_name, bool state, unsigned char value)
+{
+Serial.printf("[MAIN] Device #%d (%s) state: %s value: %d\n", device_id, device_name, state ? "ON" : "OFF", value);
+requestedDevice = device_id + 1;
+receivedState = state; });
+}
 
-    if (server.hasArg(nameParam) && server.hasArg(codeParam) && server.hasArg(bitsParam) && server.hasArg(protocolParam)) {
-      devices[i].name = server.arg(nameParam);
-      devices[i].code = strtoul(server.arg(codeParam).c_str(), NULL, 16);
-     devices[i].bits = server.arg(bitsParam).toInt();
-devices[i].protocol = (decode_type_t)server.arg(protocolParam).toInt();
+void blinkLED()
+{
+static unsigned long lastBlinkTime = 0;
+const unsigned long blinkInterval = 500;
+
+if (millis() - lastBlinkTime >= blinkInterval)
+{
+lastBlinkTime = millis();
+digitalWrite(CONNECTED_LED, !digitalRead(CONNECTED_LED));
 }
 }
 
+<<<<<<< HEAD
 saveDevices();
 
 server.sendHeader("Location", "/devices");
@@ -441,6 +469,10 @@ server.send(303);
 void setup() {
 // ... (previous setup code remains the same)
 >>>>>>> 2d680f7 (web interface upgrade test)
+=======
+void setup()
+{
+>>>>>>> d2815e6 (test)
 #if defined(ESP8266) && defined(ESP01_1M)
 pinMode(3, FUNCTION_3);
 #endif
@@ -461,8 +493,8 @@ wifiManager.autoConnect(ssid, password);
 Serial.println("Connected to Wi-Fi");
 Serial.print("IP address: ");
 Serial.println(WiFi.localIP());
-loadDevices();
 
+<<<<<<< HEAD
 server.on("/", handleRoot);
 server.on("/wifi", handleWiFi);
 server.on("/save", handleSave);
@@ -473,23 +505,35 @@ server.on("/saveDevices", handleSaveDevices);
 server.on("/addDevice", handleAddDevice);
 >>>>>>> 2d680f7 (web interface upgrade test)
 server.begin();
+=======
+  server.on("/", handleRoot);
+  server.on("/wifi", handleWiFi);
+  server.on("/save", handleSave);
+  server.begin();
+>>>>>>> d2815e6 (test)
 
 httpUpdater.setup(&server);
 
 setupFauxmo();
 }
 
+<<<<<<< HEAD
 void loop() {
 <<<<<<< HEAD
   fauxmo.handle();
   server.handleClient();
 =======
+=======
+void loop()
+{
+>>>>>>> d2815e6 (test)
 fauxmo.handle();
 server.handleClient();
 >>>>>>> 2d680f7 (web interface upgrade test)
 
   digitalWrite(CONNECTED_LED, HIGH); // Turn on the LED when connected to the home network
 
+<<<<<<< HEAD
 <<<<<<< HEAD
  if (requestedDevice > 0 && requestedDevice <= static_cast<int>(devices.size())) {
     const auto& device = devices[requestedDevice - 1];
@@ -514,31 +558,37 @@ Device device = devices[requestedDevice];
 switch (device.protocol) {
 case decode_type_t::NEC:
 irsend.sendNEC(device.code, device.bits);
+=======
+switch (requestedDevice)
+{
+case 0:
+>>>>>>> d2815e6 (test)
 break;
-case decode_type_t::SONY:
-irsend.sendSony(device.code, device.bits);
+case 1:
+irsend.sendSAMSUNG(0xE0E040BF, 32);
 break;
-case decode_type_t::RC5:
-irsend.sendRC5(device.code, device.bits);
+case 2:
+irsend.sendSAMSUNG(0xE0E016E9, 32);
 break;
-case decode_type_t::RC6:
-irsend.sendRC6(device.code, device.bits);
+case 3:
+irsend.sendEpson(0x8322EE11, 32);
 break;
-case decode_type_t::DISH:
-irsend.sendDISH(device.code, device.bits);
+case 4:
+irsend.sendEpson(0x8322E21D, 32);
 break;
-case decode_type_t::SHARP:
-irsend.sendSharpRaw(device.code, device.bits);
+case 5:
+irsend.sendEpson(0x8322E31C, 32);
 break;
-case decode_type_t::SAMSUNG:
-irsend.sendSAMSUNG(device.code, device.bits);
+case 6:
+irsend.sendEpson(0x8322E11E, 32);
 break;
-}
-requestedDevice = -1;
 }
 
+requestedDevice = 0;
+
 static unsigned long last = millis();
-if (millis() - last > 5000) {
+if (millis() - last > 5000)
+{
 last = millis();
 Serial.printf("[MAIN] Free heap: %d bytes\n", ESP.getFreeHeap());
 }
