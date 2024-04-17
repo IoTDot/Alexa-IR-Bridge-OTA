@@ -8,10 +8,12 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266HTTPUpdateServer.h>
+#include <ESP8266mDNS.h>
 #elif defined(ESP32)
 #include <WiFi.h>
 #include <WebServer.h>
 #include <HTTPUpdateServer.h>
+#include <ESPmDNS.h>
 #else
 #error "Not supported board!"
 #endif
@@ -202,6 +204,20 @@ digitalWrite(CONNECTED_LED, !digitalRead(CONNECTED_LED));
 }
 }
 
+void setupHotspot()
+{
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP(ssid, password);
+
+  if (!MDNS.begin("iralexa")) {
+    Serial.println("Error setting up MDNS responder!");
+  } else {
+    Serial.println("mDNS responder started");
+    Serial.print("Access Point IP address: ");
+    Serial.println(WiFi.softAPIP());
+  }
+}
+
 void setup()
 {
 #if defined(ESP8266) && defined(ESP01_1M)
@@ -220,8 +236,6 @@ pinMode(CONNECTED_LED, OUTPUT);
 digitalWrite(CONNECTED_LED, LOW);
 
 wifiManager.autoConnect(ssid, password);
-
-WiFi.hostname("IrAlexa");
 
 Serial.println("Connected to Wi-Fi");
 Serial.print("IP address: ");
