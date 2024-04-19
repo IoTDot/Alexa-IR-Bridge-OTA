@@ -27,6 +27,8 @@
 const char *ssid = "IrAlexa";
 const char *password = "12345678";
 
+IPAddress apIP(4, 4, 4, 4);
+
 #if defined(ESP8266)
 ESP8266WebServer server(80);
 ESP8266HTTPUpdateServer httpUpdater;
@@ -204,19 +206,6 @@ digitalWrite(CONNECTED_LED, !digitalRead(CONNECTED_LED));
 }
 }
 
-void setupHotspot()
-{
-  WiFi.mode(WIFI_AP);
-  WiFi.softAP(ssid, password);
-
-  if (!MDNS.begin("iralexa")) {
-    Serial.println("Error setting up MDNS responder!");
-  } else {
-    Serial.println("mDNS responder started");
-    Serial.print("Access Point IP address: ");
-    Serial.println(WiFi.softAPIP());
-  }
-}
 
 void setup()
 {
@@ -230,12 +219,30 @@ Serial.begin(115200, SERIAL_8N1, SERIAL_TX_ONLY);
 Serial.begin(115200);
 #endif
 
+  IPAddress local_IP(4, 4, 4, 4);
+  IPAddress gateway(4, 4, 4, 4);
+  IPAddress subnet(255, 255, 255, 0);
+
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.softAP(ssid, password);
+
+  WiFi.softAPConfig(local_IP, gateway, subnet);
+
+  if (!MDNS.begin("iralexa")) {
+    Serial.println("Error setting up MDNS responder!");
+  } else {
+    Serial.println("mDNS responder started");
+    Serial.print("Access Point IP address: ");
+    Serial.println(WiFi.softAPIP());
+  }
+
 irsend.begin();
 
 pinMode(CONNECTED_LED, OUTPUT);
 digitalWrite(CONNECTED_LED, LOW);
 
 wifiManager.autoConnect(ssid, password);
+WiFi.hostname("IrAlexa");
 
 Serial.println("Connected to Wi-Fi");
 Serial.print("IP address: ");
