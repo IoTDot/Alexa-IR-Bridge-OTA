@@ -3,6 +3,7 @@
 #include <IRremoteESP8266.h>
 #include <IRsend.h>
 #include <WiFiManager.h>
+#include <EEPROM.h>
 
 #if defined(ESP8266)
 #include <ESP8266WiFi.h>
@@ -41,16 +42,18 @@ HTTPUpdateServer httpUpdater;
 const uint16_t IrLed = IRLED_PIN;
 IRsend irsend(IrLed);
 
-const char *devices[] = {
-    "TV",
-    "Skip",
-    "Mute",
-    "Plus",
-    "Minus",
-    "Speakers",
-};
+#define DEVICE_STRUCT_SIZE 64
+#define MAX_DEVICES 10
 
-#define numDevices (sizeof(devices) / sizeof(char *))
+typedef struct {
+  char name[32];
+  char protocol[16];
+  char code[32];
+  char bitrate[8];
+} Device;
+
+Device devices[MAX_DEVICES];
+int numDevices = 0;
 
 volatile int requestedDevice = 0;
 volatile boolean receivedState = false;
@@ -92,6 +95,11 @@ void handleRoot()
   html += "});";
   html += "</script>";
   html += "<br><br>";
+  html += "<h2>Devices</h2>";
+  html += "<form action='/devices' method='post'>";
+  html += "<input type='submit' value='Configure Devices'>";
+  html += "</form>";
+  html += "<br><br>";
   html += "<h2>Wi-Fi Settings</h2>";
   html += "<form action='/wifi' method='post'>";
   html += "<input type='submit' value='Configure Wi-Fi'>";
@@ -99,6 +107,55 @@ void handleRoot()
   html += "</body></html>";
 
   server.send(200, "text/html", html);
+}
+
+void handleDevices()
+{
+  String html = "<html><head><style>";
+  html += "body { background-color: #292323; color: white; text-align: center; font-family: Arial, sans-serif; }";
+  html += "h1 { margin-top: 50px; }";
+  html += "input[type='text'], input[type='password'] { width: 300px; padding: 10px; margin: 10px; }";
+  html += "input[type='submit'] { background-color: white; color: black; padding: 10px 20px; border: none; cursor: pointer; font-size: 16px; }";
+  html += "</style></head><body>";
+  html += "<h1>Devices Configuration</h1>";
+  html += "<form method='post' action='/saveDevices'>";
+  html += "<table>";
+  for (int i = 0; i < MAX_DEVICES; i++)
+  {
+    html += "<tr>";
+    html += "<td><input type='text' name='device" + String(i) + "' value='" + devices[i].name + "' placeholder='Device name'></td>";
+    html += "<td><input type='text' name='protocol" + String(i) + "' value='" + devices[i].protocol + "' placeholder='IR protocol'></td>";
+    html += "<td><input type='text' name='code" + String(i) + "' value='" + devices[i].code + "' placeholder='IR code'></td>";
+    html += "<td><input type='text' name='bitrate" + String(i) + "' value='" + devices[i].bitrate + "' placeholder='Bitrate'></td>";
+    html += "</tr>";
+  }
+  html += "</table>";
+  html += "<input type='submit' value='Save'>";
+  html += "</form>";
+  html += "</body></html>";
+
+  server.send(200, "text/html", html);
+}
+
+void handleSaveDevices()
+{
+  for (int i = 0; i < MAX_DEVICES; i++)
+  {
+    String name = server.arg("device" + String(i));
+    String protocol = server.arg("protocol" + String(i));
+    String code = server.arg("code" + String(i));
+    String bitrate = server.arg("bitrate" + String(i));
+
+    strncpy(devices[i].name, name.c_str(), 32);
+    strncpy(devices[i].protocol, protocol.c_str(), 16);
+    strncpy(devices[i].code, code.c_str(), 32);
+    strncpy(devices[i].bitrate, bitrate.c_str(), 8);
+  }
+  EEPROM.put(0, devices);
+  EEPROM.commit();
+
+  server.sendHeader("Location", "/");
+  server.send(303);
 }
 
 void handleWiFi()
@@ -144,7 +201,7 @@ void handleSave()
     html += "<p>You can close this page</p>";
     html += "</body></html>";
 
-    server.send(200, "text/html", html);
+server.send(200, "text/html", html);
 
     delay(1000);
 
@@ -175,48 +232,50 @@ void handleSave()
   }
 }
 
-
 void setupFauxmo()
 {
-fauxmo.createServer(true);
-fauxmo.setPort(80);
-fauxmo.enable(true);
+  fauxmo.createServer(true);
+  fauxmo.setPort(80);
+  fauxmo.enable(true);
 
-for (unsigned int i = 0; i < numDevices; i++)
-{
-fauxmo.addDevice(devices[i]);
-}
+  for (int i = 0; i < MAX_DEVICES; i++)
+  {
+    if (devices[i].name[0] != 0)
+    {
+      fauxmo.addDevice(devices[i].name);
+    }
+  }
 
-fauxmo.onSetState([](unsigned char device_id, const char *device_name, bool state, unsigned char value)
-{
-Serial.printf("[MAIN] Device #%d (%s) state: %s value: %d\n", device_id, device_name, state ? "ON" : "OFF", value);
-requestedDevice = device_id + 1;
-receivedState = state; });
+  fauxmo.onSetState([](unsigned char device_id, const char *device_name, bool state, unsigned char value)
+  {
+    Serial.printf("[MAIN] Device #%d (%s) state: %s value: %d\n", device_id, device_name, state ? "ON" : "OFF", value);
+    requestedDevice = device_id + 1;
+    receivedState = state;
+  });
 }
 
 void blinkLED()
 {
-static unsigned long lastBlinkTime = 0;
-const unsigned long blinkInterval = 500;
+  static unsigned long lastBlinkTime = 0;
+  const unsigned long blinkInterval = 500;
 
-if (millis() - lastBlinkTime >= blinkInterval)
-{
-lastBlinkTime = millis();
-digitalWrite(CONNECTED_LED, !digitalRead(CONNECTED_LED));
+  if (millis() - lastBlinkTime >= blinkInterval)
+  {
+    lastBlinkTime = millis();
+    digitalWrite(CONNECTED_LED, !digitalRead(CONNECTED_LED));
+  }
 }
-}
-
 
 void setup()
 {
 #if defined(ESP8266) && defined(ESP01_1M)
-pinMode(3, FUNCTION_3);
+  pinMode(3, FUNCTION_3);
 #endif
 
 #if defined(ESP8266) && defined(ESP01_1M)
-Serial.begin(115200, SERIAL_8N1, SERIAL_TX_ONLY);
+  Serial.begin(115200, SERIAL_8N1, SERIAL_TX_ONLY);
 #elif defined(ESP32)
-Serial.begin(115200);
+  Serial.begin(115200);
 #endif
 
   IPAddress local_IP(4, 4, 4, 4);
@@ -236,65 +295,80 @@ Serial.begin(115200);
     Serial.println(WiFi.softAPIP());
   }
 
-irsend.begin();
+  irsend.begin();
 
-pinMode(CONNECTED_LED, OUTPUT);
-digitalWrite(CONNECTED_LED, LOW);
+  pinMode(CONNECTED_LED, OUTPUT);
+  digitalWrite(CONNECTED_LED, LOW);
 
-wifiManager.autoConnect(ssid, password);
-WiFi.hostname("IrAlexa");
+  wifiManager.autoConnect(ssid, password);
+  WiFi.hostname("IrAlexa");
 
-Serial.println("Connected to Wi-Fi");
-Serial.print("IP address: ");
-Serial.println(WiFi.localIP());
+  Serial.println("Connected to Wi-Fi");
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+
+  EEPROM.get(0, devices);
+  numDevices = 0;
+  for (int i = 0; i < MAX_DEVICES; i++)
+  {
+    if (devices[i].name[0] != 0)
+    {
+      numDevices++;
+    }
+    else
+    {
+      break;
+    }
+  }
 
   server.on("/", handleRoot);
   server.on("/wifi", handleWiFi);
   server.on("/save", handleSave);
+  server.on("/devices", handleDevices);
+  server.on("/saveDevices", handleSaveDevices);
   server.begin();
 
-httpUpdater.setup(&server);
+  httpUpdater.setup(&server);
 
-setupFauxmo();
+  setupFauxmo();
 }
 
 void loop()
 {
-fauxmo.handle();
-server.handleClient();
+  fauxmo.handle();
+  server.handleClient();
 
-digitalWrite(CONNECTED_LED, HIGH); // Turn on the LED when connected to the home network
+  digitalWrite(CONNECTED_LED, HIGH); // Turn on the LED when connected to the home network
 
-switch (requestedDevice)
-{
-case 0:
-break;
-case 1:
-irsend.sendSAMSUNG(0xE0E040BF, 32);
-break;
-case 2:
-irsend.sendSAMSUNG(0xE0E016E9, 32);
-break;
-case 3:
-irsend.sendEpson(0x8322EE11, 32);
-break;
-case 4:
-irsend.sendEpson(0x8322E21D, 32);
-break;
-case 5:
-irsend.sendEpson(0x8322E31C, 32);
-break;
-case 6:
-irsend.sendEpson(0x8322E11E, 32);
-break;
-}
+  switch (requestedDevice)
+  {
+    case 0:
+      break;
+    default:
+      for (int i = 0; i < MAX_DEVICES; i++)
+      {
+        if (devices[i].name[0] != 0 && requestedDevice == i + 1)
+        {
+          if (strcmp(devices[i].protocol, "SAMSUNG") == 0)
+          {
+            irsend.sendSAMSUNG(atol(devices[i].code), atol(devices[i].bitrate));
+          }
+          else if (strcmp(devices[i].protocol, "Epson") == 0)
+          {
+            irsend.sendEpson(atol(devices[i].code), atol(devices[i].bitrate));
+          }
+          // Add more protocols as needed
+        }
+      }
+      break;
+  }
 
-requestedDevice = 0;
+  requestedDevice = 0;
 
-static unsigned long last = millis();
-if (millis() - last > 5000)
-{
-last = millis();
-Serial.printf("[MAIN] Free heap: %d bytes\n", ESP.getFreeHeap());
-}
+  static unsigned long last = millis();
+  if (millis() - last > 5000)
+  {
+    last = millis();
+    Serial.printf("[MAIN] Free heap: %d bytes\n", ESP.getFreeHeap());
+  }
 }
