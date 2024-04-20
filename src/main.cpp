@@ -151,8 +151,15 @@ void handleSaveDevices()
     strncpy(devices[i].code, code.c_str(), 32);
     strncpy(devices[i].bitrate, bitrate.c_str(), 8);
   }
-  EEPROM.put(0, devices);
+
+  EEPROM.begin(DEVICE_STRUCT_SIZE * MAX_DEVICES);
+  for (int i = 0; i < MAX_DEVICES; i++)
+  {
+    EEPROM.put(i * DEVICE_STRUCT_SIZE, devices[i]);
+  }
   EEPROM.commit();
+  delay(100); // add a short delay to ensure EEPROM is written
+  EEPROM.end();
 
   server.sendHeader("Location", "/");
   server.send(303);
@@ -307,7 +314,9 @@ void setup()
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
 
+  EEPROM.begin(DEVICE_STRUCT_SIZE * MAX_DEVICES);
   EEPROM.get(0, devices);
+  EEPROM.end();
   numDevices = 0;
   for (int i = 0; i < MAX_DEVICES; i++)
   {
@@ -332,7 +341,6 @@ void setup()
 
   setupFauxmo();
 }
-
 void loop()
 {
   fauxmo.handle();
