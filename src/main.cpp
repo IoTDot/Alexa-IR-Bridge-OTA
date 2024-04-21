@@ -211,6 +211,9 @@ void handleSave()
 
     delay(1000);
 
+    WiFi.softAPdisconnect(true); // Stop the access point
+    WiFi.mode(WIFI_STA);
+
     WiFi.begin(ssid.c_str(), pass.c_str());
 
     int timeout = 10; // 10 seconds
