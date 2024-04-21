@@ -45,12 +45,12 @@ IRsend irsend(IrLed);
 #define DEVICE_STRUCT_SIZE 64
 #define MAX_DEVICES 10
 
-typedef struct {
+struct __attribute__((packed)) Device {
   char name[32];
   char protocol[16];
   char code[32];
   char bitrate[8];
-} Device;
+};
 
 Device devices[MAX_DEVICES];
 int numDevices = 0;
@@ -116,6 +116,8 @@ void handleDevices()
   html += "h1 { margin-top: 50px; }";
   html += "input[type='text'], input[type='password'] { width: 300px; padding: 10px; margin: 10px; }";
   html += "input[type='submit'] { background-color: white; color: black; padding: 10px 20px; border: none; cursor: pointer; font-size: 16px; }";
+  html += "button { background-color: white; color: black; padding: 10px 20px; border: none; cursor: pointer; font-size: 16px; }";
+  html += "table { margin: 0 auto; }";
   html += "</style></head><body>";
   html += "<h1>Devices Configuration</h1>";
   html += "<form method='post' action='/saveDevices'>";
@@ -131,12 +133,16 @@ void handleDevices()
   }
   html += "</table>";
   html += "<input type='submit' value='Save'>";
+  html += "<br><br>";
+  html += "<a href='/'><button>Back</button></a>";
   html += "</form>";
   html += "</body></html>";
 
   server.send(200, "text/html", html);
 }
 
+void saveDevicesToEEPROM();
+void loadDevicesFromEEPROM();
 void handleSaveDevices()
 {
   for (int i = 0; i < MAX_DEVICES; i++)
@@ -152,14 +158,7 @@ void handleSaveDevices()
     strncpy(devices[i].bitrate, bitrate.c_str(), 8);
   }
 
-  EEPROM.begin(DEVICE_STRUCT_SIZE * MAX_DEVICES);
-  for (int i = 0; i < MAX_DEVICES; i++)
-  {
-    EEPROM.put(i * DEVICE_STRUCT_SIZE, devices[i]);
-  }
-  EEPROM.commit();
-  delay(100); // add a short delay to ensure EEPROM is written
-  EEPROM.end();
+  saveDevicesToEEPROM();
 
   server.sendHeader("Location", "/");
   server.send(303);
@@ -208,7 +207,7 @@ void handleSave()
     html += "<p>You can close this page</p>";
     html += "</body></html>";
 
-server.send(200, "text/html", html);
+    server.send(200, "text/html", html);
 
     delay(1000);
 
@@ -239,22 +238,18 @@ server.send(200, "text/html", html);
   }
 }
 
-void setupFauxmo()
-{
+void setupFauxmo() {
   fauxmo.createServer(true);
   fauxmo.setPort(80);
   fauxmo.enable(true);
 
-  for (int i = 0; i < MAX_DEVICES; i++)
-  {
-    if (devices[i].name[0] != 0)
-    {
+  for (int i = 0; i < MAX_DEVICES; i++) {
+    if (devices[i].name[0] != 0) {
       fauxmo.addDevice(devices[i].name);
     }
   }
 
-  fauxmo.onSetState([](unsigned char device_id, const char *device_name, bool state, unsigned char value)
-  {
+  fauxmo.onSetState([](unsigned char device_id, const char *device_name, bool state, unsigned char value) {
     Serial.printf("[MAIN] Device #%d (%s) state: %s value: %d\n", device_id, device_name, state ? "ON" : "OFF", value);
     requestedDevice = device_id + 1;
     receivedState = state;
@@ -314,20 +309,15 @@ void setup()
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
 
-  EEPROM.begin(DEVICE_STRUCT_SIZE * MAX_DEVICES);
-  EEPROM.get(0, devices);
-  EEPROM.end();
-  numDevices = 0;
+  loadDevicesFromEEPROM();
+
   for (int i = 0; i < MAX_DEVICES; i++)
   {
-    if (devices[i].name[0] != 0)
-    {
-      numDevices++;
-    }
-    else
+    if (devices[i].name[0] == 0)
     {
       break;
     }
+    numDevices++;
   }
 
   server.on("/", handleRoot);
@@ -341,31 +331,28 @@ void setup()
 
   setupFauxmo();
 }
-void loop()
-{
+
+void loop() {
   fauxmo.handle();
   server.handleClient();
 
   digitalWrite(CONNECTED_LED, HIGH); // Turn on the LED when connected to the home network
 
-  switch (requestedDevice)
-  {
+  switch (requestedDevice) {
     case 0:
       break;
     default:
-      for (int i = 0; i < MAX_DEVICES; i++)
-      {
-        if (devices[i].name[0] != 0 && requestedDevice == i + 1)
-        {
-          if (strcmp(devices[i].protocol, "SAMSUNG") == 0)
-          {
+      for (int i = 0; i < MAX_DEVICES; i++) {
+        if (devices[i].name[0] != 0 && requestedDevice == i + 1) {
+          if (strcmp(devices[i].protocol, "SAMSUNG") == 0) {
             irsend.sendSAMSUNG(atol(devices[i].code), atol(devices[i].bitrate));
-          }
-          else if (strcmp(devices[i].protocol, "Epson") == 0)
-          {
+          } else if (strcmp(devices[i].protocol, "Epson") == 0) {
             irsend.sendEpson(atol(devices[i].code), atol(devices[i].bitrate));
+          } else if (strcmp(devices[i].protocol, "NEC") == 0) {
+            irsend.sendNEC(atol(devices[i].code), atol(devices[i].bitrate));
+          } else {
+            Serial.println("Unknown protocol");
           }
-          // Add more protocols as needed
         }
       }
       break;
@@ -374,9 +361,36 @@ void loop()
   requestedDevice = 0;
 
   static unsigned long last = millis();
-  if (millis() - last > 5000)
-  {
+  if (millis() - last > 5000) {
     last = millis();
     Serial.printf("[MAIN] Free heap: %d bytes\n", ESP.getFreeHeap());
   }
+}
+
+void saveDevicesToEEPROM()
+{
+  EEPROM.begin(512);
+  for (int i = 0; i < MAX_DEVICES; i++)
+  {
+    EEPROM.put(i * sizeof(Device), devices[i]);
+  }
+  EEPROM.commit();
+  EEPROM.end();
+}
+
+void loadDevicesFromEEPROM()
+{
+  EEPROM.begin(512);
+  for (int i = 0; i < MAX_DEVICES; i++)
+  {
+    Device device;
+    EEPROM.get(i * sizeof(Device), device);
+    devices[i] = device;
+    // Initialize fields to empty strings if not set
+    if (devices[i].name[0] == 0 || devices[i].name[0] == 0xff) strcpy(devices[i].name, "");
+    if (devices[i].protocol[0] == 0 || devices[i].protocol[0] == 0xff) strcpy(devices[i].protocol, "");
+    if (devices[i].code[0] == 0 || devices[i].code[0] == 0xff) strcpy(devices[i].code, "");
+    if (devices[i].bitrate[0] == 0 || devices[i].bitrate[0] == 0xff) strcpy(devices[i].bitrate, "");
+  }
+  EEPROM.end();
 }
