@@ -15,15 +15,12 @@
 #include <WebServer.h>
 #include <HTTPUpdateServer.h>
 #include <ESPmDNS.h>
-#else
-#error "Not supported board!"
-#endif
-
-#ifndef IRLED
-#error "PIN IR LED not defined!"
 #endif
 
 #define IRLED_PIN IRLED
+#define CONNECTED_LED 2
+const uint16_t IrLed = IRLED_PIN;
+IRsend irsend(IrLed);
 
 const char *ssid = "IrAlexa";
 const char *password = "12345678";
@@ -37,10 +34,6 @@ ESP8266HTTPUpdateServer httpUpdater;
 WebServer server(80);
 HTTPUpdateServer httpUpdater;
 #endif
-
-#define CONNECTED_LED 2
-const uint16_t IrLed = IRLED_PIN;
-IRsend irsend(IrLed);
 
 #define DEVICE_STRUCT_SIZE 64
 #define MAX_DEVICES 10
@@ -211,12 +204,12 @@ void handleSave()
 
     delay(1000);
 
-    WiFi.softAPdisconnect(true); // Stop the access point
+    WiFi.softAPdisconnect(true);
     WiFi.mode(WIFI_STA);
 
     WiFi.begin(ssid.c_str(), pass.c_str());
 
-    int timeout = 10; // 10 seconds
+    int timeout = 10;
     while (WiFi.status() != WL_CONNECTED && timeout > 0)
     {
       delay(1000);
@@ -339,7 +332,7 @@ void loop() {
   fauxmo.handle();
   server.handleClient();
 
-  digitalWrite(CONNECTED_LED, HIGH); // Turn on the LED when connected to the home network
+  digitalWrite(CONNECTED_LED, HIGH);
 
   switch (requestedDevice) {
     case 0:
@@ -389,7 +382,6 @@ void loadDevicesFromEEPROM()
     Device device;
     EEPROM.get(i * sizeof(Device), device);
     devices[i] = device;
-    // Initialize fields to empty strings if not set
     if (devices[i].name[0] == 0 || devices[i].name[0] == 0xff) strcpy(devices[i].name, "");
     if (devices[i].protocol[0] == 0 || devices[i].protocol[0] == 0xff) strcpy(devices[i].protocol, "");
     if (devices[i].code[0] == 0 || devices[i].code[0] == 0xff) strcpy(devices[i].code, "");
