@@ -1,114 +1,127 @@
 #include <Arduino.h>
+#include "fauxmoESP.h"
+#include <IRremoteESP8266.h>
+#include <IRsend.h>
+#include <WiFiManager.h>
+
 #if defined(ESP8266)
 #include <ESP8266WiFi.h>
 #elif defined(ESP32)
 #include <WiFi.h>
 #endif
 
-#ifndef IRLED
-#error "PIN IR LED not defined!"
-#endif
-
 #define IRLED_PIN IRLED
-
-#include "fauxmoESP.h"              
-
-#include <IRremoteESP8266.h>
-
-#include <IRsend.h>
+const uint16_t IrLed = IRLED_PIN;
+IRsend irsend(IrLed);
 
 #define CONNECTED_LED 2
 
-const uint16_t IrLed = IRLED_PIN;
+const struct Device
+{
+  const char *deviceName;
+  uint32_t irCode;  // Use uint32_t instead of uint16_t
+  uint8_t protocol; // 0 for SAMSUNG, 1 for EPSON
+} devices[] = {
+    {"TV", 0xE0E040BF, 0},
+    {"Skip", 0xE0E016E9, 0},
+    {"Mute", 0x8322EE11, 1},
+    {"Plus", 0x8322E21D, 1},
+    {"Minus", 0x8322E31C, 1},
+    {"Speakers", 0x8322E11E, 1}};
 
-IRsend irsend(IrLed);
+#define numDevices (sizeof(devices) / sizeof(Device))
 
-#define WIFI_SSID "Trojan_test_v2"
-#define WIFI_PASS "$j2vFHjW^tM!JV2$vw!9tGaM"
-
-const char * devices[] = {
-  
-    "TestA",
-    "TestB",
-};
-
-#define numDevices (sizeof(devices)/sizeof(char *))
-
-volatile int requestedDevice = 0;
+volatile unsigned int requestedDevice = 0; // Use unsigned int
 volatile boolean receivedState = false;
 
 fauxmoESP fauxmo;
 
-void wifiSetup() {
-  WiFi.mode(WIFI_STA);
+WiFiManager wifiManager;
 
-  Serial.printf("[WIFI] Connecting to %s ", WIFI_SSID);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
+bool shouldSaveConfig = false;
 
-  while (WiFi.status() != WL_CONNECTED) {
-    Serial.print(".");
-    delay(100);
+void saveConfigCallback()
+{
+  Serial.println("Should save config");
+  shouldSaveConfig = true;
+}
+
+void setup()
+{
+#if defined(ESP8266) && defined(ESP01_1M)
+  pinMode(3, FUNCTION_3);
+#endif
+
+  irsend.begin();
+
+#if defined(ESP8266) && defined(ESP01_1M)
+  Serial.begin(115200, SERIAL_8N1, SERIAL_TX_ONLY);
+#elif defined(ESP32)
+  Serial.begin(115200);
+#endif
+
+  pinMode(CONNECTED_LED, OUTPUT);
+  digitalWrite(CONNECTED_LED, HIGH);
+
+  wifiManager.setAPStaticIPConfig(IPAddress(4, 4, 4, 4), IPAddress(4, 4, 4, 4), IPAddress(255, 255, 255, 0));
+  wifiManager.setSaveConfigCallback(saveConfigCallback);
+
+  if (!wifiManager.autoConnect("IrAlexa"))
+  {
+    Serial.println("Failed to connect and hit timeout");
+    delay(3000);
   }
-  Serial.println();
+  else
+  {
+    Serial.println("Connected...");
+    if (shouldSaveConfig)
+    {
+      Serial.println("Config saved");
+      ESP.restart();
+      delay(5000);
+    }
+  }
 
   digitalWrite(CONNECTED_LED, LOW);
 
   Serial.printf("[WIFI] STATION Mode, SSID: %s, IP address: %s\n", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
-}
-
-void setup() {
-  #if defined(ESP8266) && defined(ESP01_1M)
-  pinMode(3, FUNCTION_3); // Wykonaj tylko dla ESP01_1M
-  #endif
-
-  irsend.begin();
-
-  #if defined(ESP8266) && defined(ESP01_1M)
-  Serial.begin(115200, SERIAL_8N1, SERIAL_TX_ONLY);
-
-  #elif defined(ESP32)
-  Serial.begin(115200);
-  #endif
-  
-  pinMode(CONNECTED_LED, OUTPUT);
-  digitalWrite(CONNECTED_LED, HIGH);
-
-  wifiSetup();
 
   fauxmo.createServer(true);
   fauxmo.setPort(80);
-
   fauxmo.enable(true);
 
-  for (unsigned int i = 0; i < numDevices; i++) {
-    fauxmo.addDevice(devices[i]);
+  for (unsigned int i = 0; i < numDevices; i++)
+  {
+    fauxmo.addDevice(devices[i].deviceName);
   }
 
-
-  fauxmo.onSetState([](unsigned char device_id, const char * device_name, bool state, unsigned char value) {
+  fauxmo.onSetState([](unsigned char device_id, const char *device_name, bool state, unsigned char value)
+                    {
 
     Serial.printf("[MAIN] Device #%d (%s) state: %s value: %d\n", device_id, device_name, state ? "ON" : "OFF", value);
-    
-    requestedDevice = device_id + 1;
-    receivedState = state;
-  });
-
+      
+      requestedDevice = device_id + 1;
+      receivedState = state; });
 }
 
-void loop() {
+void loop()
+{
   fauxmo.handle();
-  
-  switch (requestedDevice) {
-    case 0: break;
-    
-    case 1: irsend.sendSAMSUNG(0xE0E040BF, 32);
-            break;
 
-    case 2: irsend.sendEpson(0x8322E11E, 32);
-            break;
+  if (requestedDevice < numDevices)
+  {
+    const Device *device = &devices[requestedDevice - 1];
+    if (device->protocol == 0)
+    {
+      irsend.sendSAMSUNG(device->irCode, 32);
+    }
+    else
+    {
+      irsend.sendEpson(device->irCode, 32);
+    }
   }
 
   requestedDevice = 0;
 
-    digitalWrite(CONNECTED_LED,  (WiFi.status() != WL_CONNECTED));
+  digitalWrite(CONNECTED_LED, (WiFi.status() != WL_CONNECTED));
 }

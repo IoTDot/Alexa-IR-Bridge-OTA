@@ -19,7 +19,7 @@ IRsend irsend(IrLed);
 const struct Device
 {
   const char *deviceName;
-  uint32_t irCode;  // Use uint32_t instead of uint16_t
+  uint32_t irCode;
   uint8_t protocol; // 0 for SAMSUNG, 1 for EPSON
 } devices[] = {
     {"TV", 0xE0E040BF, 0},
@@ -31,7 +31,7 @@ const struct Device
 
 #define numDevices (sizeof(devices) / sizeof(Device))
 
-volatile unsigned int requestedDevice = 0; // Use unsigned int
+volatile unsigned int requestedDevice = 0;
 volatile boolean receivedState = false;
 
 fauxmoESP fauxmo;
@@ -46,20 +46,9 @@ void saveConfigCallback()
   shouldSaveConfig = true;
 }
 
-void setup()
+void setupWiFi()
 {
-#if defined(ESP8266) && defined(ESP01_1M)
-  pinMode(3, FUNCTION_3);
-#endif
-
-  irsend.begin();
-
-#if defined(ESP8266) && defined(ESP01_1M)
-  Serial.begin(115200, SERIAL_8N1, SERIAL_TX_ONLY);
-#elif defined(ESP32)
-  Serial.begin(115200);
-#endif
-
+  WiFi.mode(WIFI_STA);
   pinMode(CONNECTED_LED, OUTPUT);
   digitalWrite(CONNECTED_LED, HIGH);
 
@@ -85,7 +74,10 @@ void setup()
   digitalWrite(CONNECTED_LED, LOW);
 
   Serial.printf("[WIFI] STATION Mode, SSID: %s, IP address: %s\n", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
+}
 
+void setupFauxmo()
+{
   fauxmo.createServer(true);
   fauxmo.setPort(80);
   fauxmo.enable(true);
@@ -97,26 +89,37 @@ void setup()
 
   fauxmo.onSetState([](unsigned char device_id, const char *device_name, bool state, unsigned char value)
                     {
-
     Serial.printf("[MAIN] Device #%d (%s) state: %s value: %d\n", device_id, device_name, state ? "ON" : "OFF", value);
-      
       requestedDevice = device_id + 1;
       receivedState = state; });
 }
 
-void loop()
+void setup()
 {
+#if defined(ESP8266) && defined(ESP01_1M)
+  pinMode(3, FUNCTION_3);
+#endif
+
+  irsend.begin();
+
+#if defined(ESP8266) && defined(ESP01_1M)
+  Serial.begin(115200, SERIAL_8N1, SERIAL_TX_ONLY);
+#elif defined(ESP32)
+  Serial.begin(115200);
+#endif
+
+  setupWiFi();
+  setupFauxmo();
+}
+
+void loop() {
   fauxmo.handle();
 
-  if (requestedDevice < numDevices)
-  {
+  if (requestedDevice > 0 && requestedDevice <= numDevices) {
     const Device *device = &devices[requestedDevice - 1];
-    if (device->protocol == 0)
-    {
+    if (device->protocol == 0) {
       irsend.sendSAMSUNG(device->irCode, 32);
-    }
-    else
-    {
+    } else {
       irsend.sendEpson(device->irCode, 32);
     }
   }
