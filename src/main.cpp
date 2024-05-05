@@ -10,28 +10,24 @@
 #include <WiFi.h>
 #endif
 
-#ifndef IRLED
-#error "PIN IR LED not defined!"
-#endif
-
 #define IRLED_PIN IRLED
 const uint16_t IrLed = IRLED_PIN;
 IRsend irsend(IrLed);
 
 #define CONNECTED_LED 2
 
-const struct Device {
+const struct Device
+{
   const char *deviceName;
-  uint32_t irCode; // Use uint32_t instead of uint16_t
+  uint32_t irCode;  // Use uint32_t instead of uint16_t
   uint8_t protocol; // 0 for SAMSUNG, 1 for EPSON
 } devices[] = {
-  {"TV", 0xE0E040BF, 0},
-  {"Skip", 0xE0E016E9, 0},
-  {"Mute", 0x8322EE11, 1},
-  {"Plus", 0x8322E21D, 1},
-  {"Minus", 0x8322E31C, 1},
-  {"Speakers", 0x8322E11E, 1}
-};
+    {"TV", 0xE0E040BF, 0},
+    {"Skip", 0xE0E016E9, 0},
+    {"Mute", 0x8322EE11, 1},
+    {"Plus", 0x8322E21D, 1},
+    {"Minus", 0x8322E31C, 1},
+    {"Speakers", 0x8322E11E, 1}};
 
 #define numDevices (sizeof(devices) / sizeof(Device))
 
@@ -108,14 +104,19 @@ void setup()
       receivedState = state; });
 }
 
-void loop() {
+void loop()
+{
   fauxmo.handle();
 
-  if (requestedDevice > 0 && requestedDevice <= numDevices) {
+  if (requestedDevice < numDevices)
+  {
     const Device *device = &devices[requestedDevice - 1];
-    if (device->protocol == 0) {
+    if (device->protocol == 0)
+    {
       irsend.sendSAMSUNG(device->irCode, 32);
-    } else {
+    }
+    else
+    {
       irsend.sendEpson(device->irCode, 32);
     }
   }
