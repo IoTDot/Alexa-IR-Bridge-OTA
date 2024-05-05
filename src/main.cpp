@@ -20,18 +20,22 @@ IRsend irsend(IrLed);
 
 #define CONNECTED_LED 2
 
-const char *devices[] = {
-    "TV",
-    "Skip",
-    "Mute",
-    "Plus",
-    "Minus",
-    "Speakers",
+const struct Device {
+  const char *deviceName;
+  uint32_t irCode; // Use uint32_t instead of uint16_t
+  uint8_t protocol; // 0 for SAMSUNG, 1 for EPSON
+} devices[] = {
+  {"TV", 0xE0E040BF, 0},
+  {"Skip", 0xE0E016E9, 0},
+  {"Mute", 0x8322EE11, 1},
+  {"Plus", 0x8322E21D, 1},
+  {"Minus", 0x8322E31C, 1},
+  {"Speakers", 0x8322E11E, 1}
 };
 
-#define numDevices (sizeof(devices) / sizeof(char *))
+#define numDevices (sizeof(devices) / sizeof(Device))
 
-volatile int requestedDevice = 0;
+volatile unsigned int requestedDevice = 0; // Use unsigned int
 volatile boolean receivedState = false;
 
 fauxmoESP fauxmo;
@@ -92,7 +96,7 @@ void setup()
 
   for (unsigned int i = 0; i < numDevices; i++)
   {
-    fauxmo.addDevice(devices[i]);
+    fauxmo.addDevice(devices[i].deviceName);
   }
 
   fauxmo.onSetState([](unsigned char device_id, const char *device_name, bool state, unsigned char value)
@@ -104,32 +108,16 @@ void setup()
       receivedState = state; });
 }
 
-void loop()
-{
+void loop() {
   fauxmo.handle();
 
-  switch (requestedDevice)
-  {
-  case 0:
-    break;
-  case 1:
-    irsend.sendSAMSUNG(0xE0E040BF, 32);
-    break;
-  case 2:
-    irsend.sendSAMSUNG(0xE0E016E9, 32);
-    break;
-  case 3:
-    irsend.sendEpson(0x8322EE11, 32);
-    break;
-  case 4:
-    irsend.sendEpson(0x8322E21D, 32);
-    break;
-  case 5:
-    irsend.sendEpson(0x8322E31C, 32);
-    break;
-  case 6:
-    irsend.sendEpson(0x8322E11E, 32);
-    break;
+  if (requestedDevice > 0 && requestedDevice <= numDevices) {
+    const Device *device = &devices[requestedDevice - 1];
+    if (device->protocol == 0) {
+      irsend.sendSAMSUNG(device->irCode, 32);
+    } else {
+      irsend.sendEpson(device->irCode, 32);
+    }
   }
 
   requestedDevice = 0;
