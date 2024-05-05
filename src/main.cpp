@@ -94,32 +94,46 @@ void setupFauxmo()
       receivedState = state; });
 }
 
-void setup()
+void setupPinout()
 {
 #if defined(ESP8266) && defined(ESP01_1M)
-  pinMode(3, FUNCTION_3);
+  pinMode(3, FUNCTION_3); // remap GPIO3 to use it an output (ESP01 has a very limited number of GPIO pins)
 #endif
+}
 
-  irsend.begin();
-
+void setupGPIO()
+{
 #if defined(ESP8266) && defined(ESP01_1M)
-  Serial.begin(115200, SERIAL_8N1, SERIAL_TX_ONLY);
+  Serial.begin(115200, SERIAL_8N1, SERIAL_TX_ONLY); // This allows you to use RX as normal I/O, while still writing debug messages to Serial
 #elif defined(ESP32)
   Serial.begin(115200);
 #endif
+}
+
+void setup()
+{
+
+  setupPinout();
+  irsend.begin();
+  setupGPIO();
 
   setupWiFi();
   setupFauxmo();
 }
 
-void loop() {
+void loop()
+{
   fauxmo.handle();
 
-  if (requestedDevice > 0 && requestedDevice <= numDevices) {
+  if (requestedDevice > 0 && requestedDevice <= numDevices)
+  {
     const Device *device = &devices[requestedDevice - 1];
-    if (device->protocol == 0) {
+    if (device->protocol == 0)
+    {
       irsend.sendSAMSUNG(device->irCode, 32);
-    } else {
+    }
+    else
+    {
       irsend.sendEpson(device->irCode, 32);
     }
   }
