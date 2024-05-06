@@ -3,6 +3,9 @@
 #include <IRremoteESP8266.h>
 #include <IRsend.h>
 #include <WiFiManager.h>
+#include <gpio_viewer.h>      // this is for gpio_viewer
+
+GPIOViewer gpio_viewer;       // this is for gpio_viewer
 
 #if defined(ESP8266)
 #include <ESP8266WiFi.h>
@@ -112,6 +115,8 @@ void setupGPIO()
 
 void setup()
 {
+  Serial.begin(115200);           // this is for gpio_viewer
+  gpio_viewer.setPort(5555);      // this is for gpio_viewer
 
   setupPinout();
   irsend.begin();
@@ -119,6 +124,7 @@ void setup()
 
   setupWiFi();
   setupFauxmo();
+  gpio_viewer.begin();
 }
 
 void loop()
