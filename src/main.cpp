@@ -124,7 +124,7 @@ void setup()
 
   setupWiFi();
   setupFauxmo();
-  gpio_viewer.begin();
+  gpio_viewer.begin();            // this is for gpio_viewer
 }
 
 void loop()
