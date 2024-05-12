@@ -3,9 +3,6 @@
 #include <IRremoteESP8266.h>
 #include <IRsend.h>
 #include <WiFiManager.h>
-#include <gpio_viewer.h>      // this is for gpio_viewer
-
-GPIOViewer gpio_viewer;       // this is for gpio_viewer
 
 #if defined(ESP8266)
 #include <ESP8266WiFi.h>
@@ -74,7 +71,7 @@ void setupWiFi()
     }
   }
 
-  digitalWrite(CONNECTED_LED, LOW);
+  digitalWrite(CONNECTED_LED, HIGH);
 
   Serial.printf("[WIFI] STATION Mode, SSID: %s, IP address: %s\n", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
 }
@@ -97,34 +94,22 @@ void setupFauxmo()
       receivedState = state; });
 }
 
-void setupPinout()
-{
-#if defined(ESP8266) && defined(ESP01_1M)
-  pinMode(3, FUNCTION_3); // remap GPIO3 to use it an output (ESP01 has a very limited number of GPIO pins)
-#endif
-}
-
-void setupGPIO()
-{
-#if defined(ESP8266) && defined(ESP01_1M)
-  Serial.begin(115200, SERIAL_8N1, SERIAL_TX_ONLY); // This allows you to use RX as normal I/O, while still writing debug messages to Serial
-#elif defined(ESP32)
-  Serial.begin(115200);
-#endif
-}
-
 void setup()
 {
-  Serial.begin(115200);           // this is for gpio_viewer
-  gpio_viewer.setPort(5555);      // this is for gpio_viewer
+#if defined(ESP01_1M)
+  pinMode(3, FUNCTION_3);
+#endif
 
-  setupPinout();
   irsend.begin();
-  setupGPIO();
+
+#if defined(ESP01_1M)
+  Serial.begin(115200, SERIAL_8N1, SERIAL_TX_ONLY);
+#elif defined(ESP8266) && defined(ESP32)
+  Serial.begin(115200);
+#endif
 
   setupWiFi();
   setupFauxmo();
-  gpio_viewer.begin();            // this is for gpio_viewer
 }
 
 void loop()
@@ -146,5 +131,5 @@ void loop()
 
   requestedDevice = 0;
 
-  digitalWrite(CONNECTED_LED, (WiFi.status() != WL_CONNECTED));
+  digitalWrite(CONNECTED_LED, (WiFi.status() == WL_CONNECTED));
 }
