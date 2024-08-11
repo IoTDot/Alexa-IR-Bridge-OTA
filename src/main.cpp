@@ -22,12 +22,14 @@ const struct Device
   uint32_t irCode;
   uint8_t protocol; // 0 for SAMSUNG, 1 for EPSON
 } devices[] = {
-    {"TV", 0xE0E040BF, 0},
-    {"Skip", 0xE0E016E9, 0},
-    {"Mute", 0x8322EE11, 1},
-    {"Plus", 0x8322E21D, 1},
-    {"Minus", 0x8322E31C, 1},
-    {"Speakers", 0x8322E11E, 1}};
+    {"TV", 0xE0E040BF, 0}, // TV Turn ON or OFF
+    {"Skip", 0xE0E016E9, 0}, // TV OK button
+    {"Mute", 0x8322EE11, 1}, // TV Mute
+    {"Speaker Plus", 0x8322E21D, 1}, //Speakers Volume UP
+    {"Speaker Minus", 0x8322E31C, 1}, //Speakers Volume Down
+    {"Speakers", 0x8322E11E, 1}, // Speakers Turn ON or OFF
+    {"Fan", 0xD82, 2}, // Fan ON
+    {"Fan 1", 0xD81, 2}}; // Fan OFF
 
 #define numDevices (sizeof(devices) / sizeof(Device))
 
@@ -123,9 +125,13 @@ void loop()
     {
       irsend.sendSAMSUNG(device->irCode, 32);
     }
-    else
+    else if (device->protocol == 1)
     {
       irsend.sendEpson(device->irCode, 32);
+    }
+    else if (device->protocol == 2)
+    {
+      irsend.sendSymphony(device->irCode, 12);
     }
   }
 
