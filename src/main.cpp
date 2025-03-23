@@ -15,12 +15,13 @@ const uint16_t IrLed = IRLED_PIN;
 IRsend irsend(IrLed);
 
 #define CONNECTED_LED 2
+#define BOOT_BUTTON_PIN 0
 
 const struct Device
 {
   const char *deviceName;
   uint32_t irCode;
-  uint8_t protocol; // 0 for SAMSUNG, 1 for EPSON
+  uint8_t protocol; // 0 for SAMSUNG, 1 for EPSON, 2 for Symphony
 } devices[] = {
     {"TV", 0xE0E040BF, 0}, // TV Turn ON or OFF
     {"Skip", 0xE0E016E9, 0}, // TV OK button
@@ -54,7 +55,6 @@ void setupWiFi()
   pinMode(CONNECTED_LED, OUTPUT);
   digitalWrite(CONNECTED_LED, HIGH);
 
-  wifiManager.setAPStaticIPConfig(IPAddress(4, 4, 4, 4), IPAddress(4, 4, 4, 4), IPAddress(255, 255, 255, 0));
   wifiManager.setSaveConfigCallback(saveConfigCallback);
 
   if (!wifiManager.autoConnect("IrAlexa"))
@@ -102,6 +102,8 @@ void setup()
   pinMode(3, FUNCTION_3);
 #endif
 
+  pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
+
   irsend.begin();
 
 #if defined(ESP01_1M)
@@ -116,6 +118,31 @@ void setup()
 
 void loop()
 {
+  static unsigned long buttonPressStart = 0;
+  // Sprawdzamy stan przycisku (zakładamy, że przycisk aktywny jest stan niski)
+  if (digitalRead(BOOT_BUTTON_PIN) == LOW) {
+    // Jeśli przycisk został właśnie wciśnięty, zapisz czas
+    if (buttonPressStart == 0) {
+      buttonPressStart = millis();
+    }
+    // Jeśli przycisk jest już przytrzymany dłużej niż 5 sekund
+    else if (millis() - buttonPressStart >= 3000) {
+      Serial.println("Przycisk przytrzymany 3 sekund, uruchamiam konfigurator...");
+      // Usuń zapisane dane WiFi
+      wifiManager.resetSettings();
+      // Rozłącz z bieżącą siecią i przełącz na tryb wyłącznie AP
+      WiFi.disconnect(true);
+      WiFi.mode(WIFI_AP);
+      // Uruchom konfigurator, który domyślnie pojawi się na 192.168.4.1
+      wifiManager.startConfigPortal("IrAlexa");
+      // Zresetuj licznik przycisku
+      buttonPressStart = 0;
+    }
+  } else {
+    // Jeśli przycisk nie jest wciśnięty, resetujemy licznik
+    buttonPressStart = 0;
+  }
+
   fauxmo.handle();
 
   if (requestedDevice > 0 && requestedDevice <= numDevices)
