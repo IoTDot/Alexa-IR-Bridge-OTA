@@ -58,8 +58,8 @@ void setupWiFi() {
 
   wifiManager.setSaveConfigCallback(saveConfigCallback);
 
-  // Ustawienie portalu konfiguracji z hasłem "iralexa"
-  if (!wifiManager.autoConnect("IrAlexa", "iralexa")) {
+  // Ustawienie portalu konfiguracji z hasłem "iralexa123"
+  if (!wifiManager.autoConnect("IrAlexa", "iralexa123")) {
     Serial.println("Failed to connect and hit timeout");
     delay(3000);
   } else {
