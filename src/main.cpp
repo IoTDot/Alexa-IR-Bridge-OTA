@@ -4,48 +4,129 @@
 #include <IRsend.h>
 #include <WiFiManager.h>
 #include <Ticker.h>
+#include <ArduinoJson.h>
+#include <LittleFS.h>
 
 #if defined(ESP8266)
   #include <ESP8266WiFi.h>
-#elif defined(ESP32)
+  #include <ESP8266WebServer.h>
+#else
   #include <WiFi.h>
+  #include <WebServer.h>
 #endif
 
-#define IRLED_PIN IRLED
+#include "DeviceConfig.h"
+#include "webInterface.h"
+
+// -----------------------
+// Definicje sprzętowe
+// -----------------------
+#define IRLED_PIN 4         // Dostosuj pin dla IR LED
 const uint16_t IrLed = IRLED_PIN;
 IRsend irsend(IrLed);
 
 #define CONNECTED_LED 2
 #define BOOT_BUTTON_PIN 0
 
-struct Device {
-  const char *deviceName;
-  uint32_t irCode;
-  uint8_t protocol; // 0: SAMSUNG, 1: EPSON, 2: Symphony
-};
+// -----------------------
+// Zmienne globalne – lista urządzeń
+// -----------------------
+Device devices[MAX_DEVICES];
+uint8_t numDevices = 0;  // Początkowo pusta lista
 
-Device devices[] = {
-  {"TV", 0xE0E040BF, 0},
-  {"Skip", 0xE0E016E9, 0},
-  {"Mute", 0x8322EE11, 1},
-  {"Speaker Plus", 0x8322E21D, 1},
-  {"Speaker Minus", 0x8322E31C, 1},
-  {"Speakers", 0x8322E11E, 1},
-  {"Fan", 0xD82, 2},
-  {"Fan 1", 0xD81, 2}
-};
-
-#define numDevices (sizeof(devices) / sizeof(Device))
-
-volatile unsigned int requestedDevice = 0;
-volatile boolean receivedState = false;
-
+// -----------------------
+// Globalne obiekty
+// -----------------------
 fauxmoESP fauxmo;
 WiFiManager wifiManager;
-
 Ticker irTicker;
 
+#if defined(ESP8266)
+ESP8266WebServer server(80);
+#else
+WebServer server(80);
+#endif
+
 bool shouldSaveConfig = false;
+bool configMode = false;  // Tryb konfiguracji – gdy true, uruchamiamy webowy interfejs
+
+const char* CONFIG_FILE = "/config.json";
+
+void loadDevicesConfig() {
+  if (!LittleFS.begin()) {
+    Serial.println("Błąd montowania LittleFS");
+    return;
+  }
+  if (!LittleFS.exists(CONFIG_FILE)) {
+    Serial.println("Plik konfiguracyjny nie istnieje, lista urządzeń pusta");
+    numDevices = 0;
+    return;
+  }
+  File configFile = LittleFS.open(CONFIG_FILE, "r");
+  if (!configFile) {
+    Serial.println("Nie udało się otworzyć pliku konfiguracyjnego");
+    return;
+  }
+  // Wyciszamy ostrzeżenia o deprecjacji dla StaticJsonDocument
+  #pragma GCC diagnostic push
+  #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+  StaticJsonDocument<1024> doc;
+  #pragma GCC diagnostic pop
+
+  DeserializationError error = deserializeJson(doc, configFile);
+  configFile.close();
+  if (error) {
+    Serial.println("Błąd odczytu konfiguracji JSON, lista urządzeń pusta");
+    numDevices = 0;
+    return;
+  }
+  JsonArray arr = doc["devices"].as<JsonArray>();
+  numDevices = 0;
+  for (JsonObject obj : arr) {
+    if (numDevices >= MAX_DEVICES) break;
+    devices[numDevices].deviceName = obj["name"].as<String>();
+    const char* irStr = obj["ircode"];
+    devices[numDevices].irCode = strtoul(irStr, NULL, 16);
+    devices[numDevices].protocol = obj["protocol"];
+    numDevices++;
+  }
+  Serial.printf("Wczytano %d urządzeń z konfiguracji\n", numDevices);
+}
+
+void saveDevicesConfig() {
+  // Wyciszamy ostrzeżenia o deprecjacji dla StaticJsonDocument
+  #pragma GCC diagnostic push
+  #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+  StaticJsonDocument<1024> doc;
+  #pragma GCC diagnostic pop
+
+  JsonArray arr = doc["devices"].to<JsonArray>();
+  if (arr.isNull()) {
+    doc["devices"] = JsonArray();
+    arr = doc["devices"].to<JsonArray>();
+  }
+  for (uint8_t i = 0; i < numDevices; i++) {
+    // Używamy metody add<JsonObject>() zamiast createNestedObject()
+    JsonObject obj = arr.add<JsonObject>();
+    obj["name"] = devices[i].deviceName;
+    char buffer[9];
+    sprintf(buffer, "%X", devices[i].irCode);
+    obj["ircode"] = buffer;
+    obj["protocol"] = devices[i].protocol;
+  }
+  File configFile = LittleFS.open(CONFIG_FILE, "w");
+  if (!configFile) {
+    Serial.println("Nie udało się otworzyć pliku do zapisu konfiguracji");
+    return;
+  }
+  if (serializeJson(doc, configFile) == 0) {
+    Serial.println("Błąd zapisu konfiguracji");
+  } else {
+    Serial.println("Konfiguracja zapisana w LittleFS");
+  }
+  configFile.close();
+}
+
 void saveConfigCallback() {
   Serial.println("Should save config");
   shouldSaveConfig = true;
@@ -57,38 +138,32 @@ void setupWiFi() {
   digitalWrite(CONNECTED_LED, HIGH);
 
   wifiManager.setSaveConfigCallback(saveConfigCallback);
-
-  // Ustawienie portalu konfiguracji z hasłem "iralexa123"
   if (!wifiManager.autoConnect("IrAlexa", "iralexa123")) {
-    Serial.println("Failed to connect and hit timeout");
+    Serial.println("Nie udało się połączyć, timeout");
     delay(3000);
   } else {
-    Serial.println("Connected...");
+    Serial.println("Połączono z WiFi");
     if (shouldSaveConfig) {
-      Serial.println("Config saved");
+      Serial.println("Konfiguracja została zapisana");
       ESP.restart();
       delay(5000);
     }
   }
-
-  digitalWrite(CONNECTED_LED, HIGH);
-  Serial.printf("[WIFI] STATION Mode, SSID: %s, IP address: %s\n",
-                WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
+  Serial.printf("[WIFI] SSID: %s, IP: %s\n", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
 }
 
 void setupFauxmo() {
   fauxmo.createServer(true);
   fauxmo.setPort(80);
   fauxmo.enable(true);
-
-  for (unsigned int i = 0; i < numDevices; i++) {
-    fauxmo.addDevice(devices[i].deviceName);
+  for (uint8_t i = 0; i < numDevices; i++) {
+    fauxmo.addDevice(devices[i].deviceName.c_str());
+    Serial.printf("Fauxmo: Dodano urządzenie: %s\n", devices[i].deviceName.c_str());
   }
-
   fauxmo.onSetState([](unsigned char device_id, const char *device_name, bool state, unsigned char value) {
-    Serial.printf("[MAIN] Device #%d (%s) state: %s value: %d\n", device_id, device_name, state ? "ON" : "OFF", value);
-    requestedDevice = device_id + 1;
-    receivedState = state;
+    Serial.printf("[FAUXMO] Alexa wysłała komendę do urządzenia #%d (%s): %s, wartość: %d\n",
+                  device_id, device_name, state ? "ON" : "OFF", value);
+    // Wywołaj wysłanie sygnału IR lub inne działania
   });
 }
 
@@ -109,68 +184,61 @@ void sendIRSignal(const Device &device) {
   }
 }
 
-// Funkcja wywoływana asynchronicznie przez Ticker
 void processIR() {
-  if (requestedDevice > 0 && requestedDevice <= numDevices) {
-    const Device &device = devices[requestedDevice - 1];
-    sendIRSignal(device);
-    requestedDevice = 0;
-  }
+  // Przykładowa funkcja przetwarzająca wysłanie sygnału IR – do uzupełnienia wg potrzeb
 }
 
 void handleButton() {
-  static unsigned long buttonPressStart = 0;
+  static uint8_t pressCount = 0;
   static bool lastButtonState = HIGH;
   bool currentButtonState = digitalRead(BOOT_BUTTON_PIN);
-
-  // Debounce: sprawdzamy zmianę stanu z niewielkim opóźnieniem
   if (currentButtonState != lastButtonState) {
     delay(50);
     currentButtonState = digitalRead(BOOT_BUTTON_PIN);
   }
-
-  if (currentButtonState == LOW) {
-    if (buttonPressStart == 0) {
-      buttonPressStart = millis();
-    } else if (millis() - buttonPressStart >= 3000) {
-      Serial.println("Przycisk przytrzymany 3 sekundy, uruchamiam konfigurator...");
-      wifiManager.resetSettings();
-      WiFi.disconnect(true);
-      WiFi.mode(WIFI_AP);
-      // Portal konfiguracji zabezpieczony hasłem "iralexa"
-      wifiManager.startConfigPortal("IrAlexa", "iralexa");
-      buttonPressStart = 0;
+  if (currentButtonState == LOW && lastButtonState == HIGH) {
+    pressCount++;
+    if (pressCount >= 3) {
+      configMode = !configMode;
+      if (configMode) {
+        Serial.println("Włączono tryb konfiguracji");
+        // Wyłączamy fauxmo, aby zwolnić port 80
+        fauxmo.enable(false);
+        setupWebInterface(server);
+      } else {
+        Serial.println("Wyłączono tryb konfiguracji");
+        stopWebInterface(server);
+        // Przywracamy działanie fauxmo
+        fauxmo.enable(true);
+      }
+      pressCount = 0;
     }
-  } else {
-    buttonPressStart = 0;
   }
   lastButtonState = currentButtonState;
 }
 
+
 void setup() {
-#if defined(ESP01_1M)
-  pinMode(3, FUNCTION_3);
-#endif
-
-  pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
-  irsend.begin();
-
-#if defined(ESP01_1M)
-  Serial.begin(115200, SERIAL_8N1, SERIAL_TX_ONLY);
-#elif defined(ESP8266) || defined(ESP32)
   Serial.begin(115200);
-#endif
-
+  pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
+  pinMode(CONNECTED_LED, OUTPUT);
+  digitalWrite(CONNECTED_LED, LOW);
+  irsend.begin();
   setupWiFi();
+  if (!LittleFS.begin()) {
+    Serial.println("Błąd montowania LittleFS");
+  }
+  loadDevicesConfig();
   setupFauxmo();
-
-  // Ustawiamy Ticker do asynchronicznego przetwarzania komend IR co 100 ms
   irTicker.attach_ms(100, processIR);
 }
 
 void loop() {
   handleButton();
-  fauxmo.handle();
-  // Inne zadania mogą być wykonywane tutaj - Ticker działa asynchronicznie
+  if (!configMode) {
+    fauxmo.handle();
+  } else {
+    server.handleClient();
+  }
   digitalWrite(CONNECTED_LED, (WiFi.status() == WL_CONNECTED));
 }
