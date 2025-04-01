@@ -1,3 +1,16 @@
+# *********************************************************************
+# UWAGA!
+# Aby ten skrypt działał poprawnie, na laptopie (komputerze, do którego
+# łączysz się przez SSH) muszą być zainstalowane następujące pakiety:
+#
+#   esptool  - do wgrywania firmware na ESP
+#   pyserial - do automatycznego wykrywania portu COM
+#
+# Możesz je zainstalować poleceniami:
+#   python -m pip install esptool
+#   python -m pip install pyserial
+# *********************************************************************
+
 # pyright: reportUndefinedVariable=false
 Import("env")
 import os
@@ -19,16 +32,15 @@ def get_client_ip():
     print("Błąd: Nie udało się wykryć adresu IP klienta (SSH_CONNECTION).")
     env.Exit(1)
 
-def get_com_port(laptop_ip):
+def get_com_port_and_chip(laptop_ip):
     """
-    Wykrywa port COM na laptopie Windows, na którym podłączone jest ESP.
+    Wykrywa port COM na laptopie Windows, na którym podłączone jest ESP, oraz określa typ układu.
     Uruchamia zdalnie polecenie Pythona, które wypisuje dostępne porty COM,
     a następnie testuje każdy z nich przy użyciu esptool.
+    Zwraca krotkę (port, chip_type) gdzie chip_type to "esp8266" lub "esp32".
+    (ESP01 jest wariantem esp8266.)
     """
     print("Rozpoczynam wykrywanie portów COM na laptopie:", laptop_ip)
-    # Polecenie, które działa lokalnie:
-    # python -c "import serial.tools.list_ports; print('\n'.join([p.device for p in serial.tools.list_ports.comports()]))"
-    # Aby przekazać je przez SSH, stosujemy odpowiednie escapowanie:
     remote_cmd = 'python -c "import serial.tools.list_ports; print(\\"\\\\n\\".join([p.device for p in serial.tools.list_ports.comports()]))"'
     ssh_cmd = f"ssh dot@{laptop_ip} '{remote_cmd}'"
     print("Polecenie do wykrycia portów COM:")
@@ -45,7 +57,7 @@ def get_com_port(laptop_ip):
     ports = [line.strip() for line in result.stdout.splitlines() if line.strip()]
     print("Znalezione porty:", ports)
     
-    # Testujemy każdy port – sprawdzamy czy esptool zwraca komunikat charakterystyczny dla ESP
+    # Testujemy każdy port – sprawdzamy, czy esptool zwraca komunikat charakterystyczny dla ESP
     for port in ports:
         test_cmd = f"ssh dot@{laptop_ip} 'python -m esptool --port {port} --after no_reset chip_id'"
         print(f"Testowanie portu {port} za pomocą polecenia:")
@@ -54,10 +66,16 @@ def get_com_port(laptop_ip):
         print(f"Wynik testu portu {port}:")
         print("STDOUT:", test_result.stdout)
         print("STDERR:", test_result.stderr)
-        if "Chip is ESP8266" in test_result.stdout or "Chip is ESP32" in test_result.stdout:
-            print(f"Znaleziono ESP na porcie: {port}")
-            return port
-    
+        chip_type = None
+        if "Chip is ESP8266" in test_result.stdout:
+            chip_type = "esp8266"
+        elif "Chip is ESP32" in test_result.stdout:
+            chip_type = "esp32"
+        
+        if chip_type:
+            print(f"Znaleziono ESP na porcie: {port}, typ: {chip_type}")
+            return port, chip_type
+
     print("Błąd: Nie wykryto ESP na żadnym z dostępnych portów.")
     env.Exit(1)
 
@@ -65,8 +83,9 @@ def after_build(source, target, env):
     """
     Po kompilacji:
       1. Przesyłamy firmware (firmware.bin) z Linuxa na laptopa z Windows.
-      2. Wykrywamy na laptopie port COM, na którym jest ESP.
-      3. Wgrywamy firmware na ESP.
+      2. Wykrywamy na laptopie port COM, na którym jest ESP, oraz określamy typ chipu.
+      3. Czyścimy ESP (erase_flash).
+      4. Wgrywamy firmware na ESP przy użyciu esptool, przekazując jawnie typ chipu i baud rate.
     """
     print("Proces po kompilacji rozpoczęty...")
     # Ścieżka do firmware skompilowanego na Linuxie
@@ -99,22 +118,33 @@ def after_build(source, target, env):
         print("Błąd: Nie udało się przesłać pliku przez SCP.")
         env.Exit(1)
     
-    # Wykrycie portu COM, na którym podłączone jest ESP
-    com_port = get_com_port(laptop_ip)
+    # Wykrycie portu COM oraz typu ESP
+    com_port, chip_type = get_com_port_and_chip(laptop_ip)
     print("Wykryty port COM:", com_port)
+    print("Wykryty typ chipu:", chip_type)
     
-    # Flashowanie firmware na ESP przy użyciu esptool na laptopie Windows
-    flash_cmd = f'ssh dot@{laptop_ip} "python -m esptool --port {com_port} write_flash 0x00000 \\"{firmware_path_local}\\""'
+    # Parametry przyspieszające flashowanie – ustaw baud rate (dostosuj w razie potrzeby)
+    baud_rate = 921600
+
+    # Czyszczenie ESP przed flashowaniem – erase_flash
+    erase_cmd = f'ssh dot@{laptop_ip} "python -m esptool --chip {chip_type} --port {com_port} --baud {baud_rate} erase_flash"'
+    print("Czyszczenie ESP (erase_flash):")
+    print(erase_cmd)
+    erase_result = subprocess.run(erase_cmd, shell=True)
+    if erase_result.returncode != 0:
+        print("Błąd: Nie udało się wyczyścić ESP.")
+        env.Exit(1)
+    
+    # Flashowanie firmware na ESP przy użyciu esptool
+    flash_cmd = f'ssh dot@{laptop_ip} "python -m esptool --chip {chip_type} --port {com_port} --baud {baud_rate} write_flash 0x00000 \\"{firmware_path_local}\\""'
     print("Rozpoczynam flashowanie przy użyciu polecenia:")
     print(flash_cmd)
-    flash_result = subprocess.run(flash_cmd, shell=True, capture_output=True, text=True)
-    print("Wynik flashowania:")
-    print("STDOUT:", flash_result.stdout)
-    print("STDERR:", flash_result.stderr)
+    flash_result = subprocess.run(flash_cmd, shell=True)
     if flash_result.returncode != 0:
         print("Błąd: Nie udało się wgrać firmware na ESP.")
         env.Exit(1)
-    
     print("Flashowanie zakończone sukcesem!")
 
+# Wymusza wykonanie post-akcji za każdym razem
+env.AlwaysBuild("$BUILD_DIR/${PROGNAME}.bin")
 env.AddPostAction("$BUILD_DIR/${PROGNAME}.bin", after_build)
