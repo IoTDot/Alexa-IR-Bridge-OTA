@@ -1,3 +1,16 @@
+# *********************************************************************
+# UWAGA!
+# Aby ten skrypt działał poprawnie, na laptopie (komputerze, do którego
+# łączysz się przez SSH) muszą być zainstalowane następujące pakiety:
+#
+#   esptool  - do wgrywania firmware na ESP
+#   pyserial - do automatycznego wykrywania portu COM
+#
+# Możesz je zainstalować poleceniami:
+#   python -m pip install esptool
+#   python -m pip install pyserial
+# *********************************************************************
+
 # pyright: reportUndefinedVariable=false
 Import("env")
 import os
