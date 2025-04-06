@@ -87,6 +87,10 @@ def after_build(source, target, env):
       3. Czyścimy ESP (erase_flash).
       4. Wgrywamy firmware na ESP przy użyciu esptool, przekazując jawnie typ chipu i baud rate.
     """
+    if os.environ.get("GITHUB_ACTIONS"):
+        print("Wykryto środowisko CI, pomijam post-build actions.")
+        return
+
     print("Proces po kompilacji rozpoczęty...")
     # Ścieżka do firmware skompilowanego na Linuxie
     firmware_path_remote = os.path.abspath(str(target[0]))
