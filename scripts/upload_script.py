@@ -1,16 +1,3 @@
-# *********************************************************************
-# UWAGA!
-# Aby ten skrypt działał poprawnie, na laptopie (komputerze, do którego
-# łączysz się przez SSH) muszą być zainstalowane następujące pakiety:
-#
-#   esptool  - do wgrywania firmware na ESP
-#   pyserial - do automatycznego wykrywania portu COM
-#
-# Możesz je zainstalować poleceniami:
-#   python -m pip install esptool
-#   python -m pip install pyserial
-# *********************************************************************
-
 # pyright: reportUndefinedVariable=false
 Import("env")
 import os
@@ -36,11 +23,13 @@ def get_client_ip():
     print("⚠️  Ostrzeżenie: Nie udało się wykryć adresu IP klienta. Upload zostanie wykonany tylko do pliku na kliencie.")
     return None
 
-def get_com_port_and_chip(laptop_ip, expected_chip=None):
+def get_com_port_and_chip(laptop_ip, expected_chip=None, expected_token=None):
     """
-    Wykrywa port COM na laptopie Windows, na którym podłączone jest ESP, oraz określa typ układu.
-    Jeśli expected_chip (np. "esp32" lub "esp8266") jest podany, zwraca tylko port, na którym
-    wykryty chip odpowiada oczekiwanemu typowi.
+    Wykrywa port COM oraz typ układu.
+    Jeśli expected_chip (np. "esp32" lub "esp8266") jest podany, zwraca tylko port,
+    na którym wykryty chip odpowiada oczekiwanemu typowi.
+    Jeśli expected_token (fragment nazwy, np. "esp01" lub "nodemcuv2") jest podany,
+    dodatkowo wykonuje komendę flash_id i sprawdza, czy wynik zawiera ten token.
     """
     print("Rozpoczynam wykrywanie portów COM na laptopie:", laptop_ip)
     remote_cmd = 'python -c "import serial.tools.list_ports; print(\\"\\\\n\\".join([p.device for p in serial.tools.list_ports.comports()]))"'
@@ -78,6 +67,19 @@ def get_com_port_and_chip(laptop_ip, expected_chip=None):
             if expected_chip and chip_type != expected_chip:
                 print(f"Ostrzeżenie: wykryty chip '{chip_type}' nie odpowiada oczekiwanemu '{expected_chip}'. Pomijam ten port.")
                 continue
+            
+            # Dodatkowa weryfikacja flash_id na podstawie expected_token
+            if expected_token and chip_type == "esp8266":
+                flash_cmd = f"ssh dot@{laptop_ip} 'python -m esptool --port {port} flash_id'"
+                print(f"Testowanie flash_id dla portu {port}:")
+                flash_result = subprocess.run(flash_cmd, shell=True, capture_output=True, text=True)
+                print(f"Wynik flash_id dla portu {port}:")
+                print("STDOUT:", flash_result.stdout)
+                print("STDERR:", flash_result.stderr)
+                if expected_token.lower() not in flash_result.stdout.lower():
+                    print(f"Ostrzeżenie: flash_id nie zawiera oczekiwanego tokenu '{expected_token}'. Pomijam ten port.")
+                    continue
+            
             return port, chip_type
 
     print("Błąd: Nie wykryto urządzenia spełniającego oczekiwania na żadnym z dostępnych portów.")
@@ -87,10 +89,10 @@ def after_build(source, target, env):
     """
     Po kompilacji:
       1. Przesyłamy firmware na laptopa (Windows) do unikalnego pliku zależnego od nazwy płytki.
-      2. Na podstawie nazwy folderu wyznaczamy oczekiwany typ chipu.
+      2. Na podstawie nazwy folderu wyznaczamy oczekiwany typ chipu oraz token, który powinien być zawarty w flash_id.
       3. Próbuje wykryć port COM dla podłączonego urządzenia.
-         Jeśli urządzenie zostanie znalezione – wykonuje flashowanie.
-         Jeśli nie – firmware został przesłany, ale flashowanie zostanie pominięte.
+         Jeśli urządzenie zostanie znalezione i jego flash_id zawiera oczekiwany token – wykonuje flashowanie.
+         W przeciwnym przypadku flashowanie i czyszczenie zostaje pominięte.
     """
     if os.environ.get("GITHUB_ACTIONS"):
         print("Wykryto środowisko CI, pomijam post-build actions.")
@@ -102,11 +104,20 @@ def after_build(source, target, env):
     board_name = env['PIOENV']
     print(f"Wykryto nazwę płytki: {board_name}")
 
-    # Określamy oczekiwany typ chipu na podstawie nazwy płytki.
-    if "esp32" in board_name.lower():
+    # Określamy oczekiwany typ chipu oraz token na podstawie nazwy płytki.
+    # Przykładowo, jeśli board_name zawiera "esp01" to oczekujemy tokenu "esp01",
+    # a jeśli "nodemcuv2" to token "nodemcuv2".
+    expected_token = None
+    if "esp01" in board_name.lower():
+        expected_chip = "esp8266"
+        expected_token = "esp01"
+    elif "nodemcuv2" in board_name.lower():
+        expected_chip = "esp8266"
+        expected_token = "esp8266"
+    elif "esp32" in board_name.lower():
         expected_chip = "esp32"
     else:
-        expected_chip = "esp8266"
+        expected_chip = None
 
     # Określamy ścieżkę do firmware na podstawie środowiska
     firmware_source_path = env.subst("$BUILD_DIR/firmware.bin")
@@ -142,10 +153,10 @@ def after_build(source, target, env):
         # Jeśli nie mamy IP, nie próbujemy flashowania.
         return
 
-    # Próbujemy wykryć urządzenie o oczekiwanym typie.
-    com_port, chip_type = get_com_port_and_chip(laptop_ip, expected_chip)
+    # Próbujemy wykryć urządzenie o oczekiwanym typie i tokenie (jeśli dotyczy).
+    com_port, chip_type = get_com_port_and_chip(laptop_ip, expected_chip, expected_token)
     if not com_port or not chip_type:
-        print(f"Nie wykryto urządzenia typu '{expected_chip}'. Firmware został przesłany, flashowanie pominięte.")
+        print(f"Nie wykryto urządzenia typu '{expected_chip}' z tokenem '{expected_token}'. Firmware został przesłany, flashowanie pominięte.")
         return
     
     print("Wykryty port COM:", com_port)
