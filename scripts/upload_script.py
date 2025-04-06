@@ -18,23 +18,29 @@ import subprocess
 
 def get_client_ip():
     """
-    Pobiera adres IP klienta (laptopa Windows) z zmiennej środowiskowej SSH_CONNECTION.
+    Pobiera adres IP klienta (laptopa Windows) z zmiennych środowiskowych.
+    Próbuje: SSH_CONNECTION, SSH_CLIENT, a jeśli nic nie znajdzie, sprawdza zmienną CLIENT_IP.
     """
-    print("Sprawdzam zmienną SSH_CONNECTION...")
-    ssh_conn = os.environ.get("SSH_CONNECTION")
-    print(f"SSH_CONNECTION: {ssh_conn}")
+    print("Sprawdzam zmienne SSH_CONNECTION, SSH_CLIENT oraz CLIENT_IP...")
+    ssh_conn = os.environ.get("SSH_CONNECTION") or os.environ.get("SSH_CLIENT")
     if ssh_conn:
         parts = ssh_conn.split()
         if parts:
             ip = parts[0]
             print(f"Wykryty adres IP klienta: {ip}")
             return ip
-    print("⚠️  Ostrzeżenie: Nie udało się wykryć adresu IP klienta (SSH_CONNECTION). Pomijam upload.")
+    client_ip = os.environ.get("CLIENT_IP")
+    if client_ip:
+        print(f"Używam ręcznie ustawionego adresu IP (CLIENT_IP): {client_ip}")
+        return client_ip
+    print("⚠️  Ostrzeżenie: Nie udało się wykryć adresu IP klienta. Upload zostanie wykonany tylko do pliku na kliencie.")
     return None
 
-def get_com_port_and_chip(laptop_ip):
+def get_com_port_and_chip(laptop_ip, expected_chip=None):
     """
     Wykrywa port COM na laptopie Windows, na którym podłączone jest ESP, oraz określa typ układu.
+    Jeśli expected_chip (np. "esp32" lub "esp8266") jest podany, zwraca tylko port, na którym
+    wykryty chip odpowiada oczekiwanemu typowi.
     """
     print("Rozpoczynam wykrywanie portów COM na laptopie:", laptop_ip)
     remote_cmd = 'python -c "import serial.tools.list_ports; print(\\"\\\\n\\".join([p.device for p in serial.tools.list_ports.comports()]))"'
@@ -69,57 +75,77 @@ def get_com_port_and_chip(laptop_ip):
         
         if chip_type:
             print(f"Znaleziono ESP na porcie: {port}, typ: {chip_type}")
+            if expected_chip and chip_type != expected_chip:
+                print(f"Ostrzeżenie: wykryty chip '{chip_type}' nie odpowiada oczekiwanemu '{expected_chip}'. Pomijam ten port.")
+                continue
             return port, chip_type
 
-    print("Błąd: Nie wykryto ESP na żadnym z dostępnych portów.")
+    print("Błąd: Nie wykryto urządzenia spełniającego oczekiwania na żadnym z dostępnych portów.")
     return None, None
 
 def after_build(source, target, env):
     """
     Po kompilacji:
-      1. Przesyłamy firmware na laptopa.
-      2. Wykrywamy port COM i typ chipu.
-      3. Czyścimy flash.
-      4. Flashujemy firmware.
+      1. Przesyłamy firmware na laptopa (Windows) do unikalnego pliku zależnego od nazwy płytki.
+      2. Na podstawie nazwy folderu wyznaczamy oczekiwany typ chipu.
+      3. Próbuje wykryć port COM dla podłączonego urządzenia.
+         Jeśli urządzenie zostanie znalezione – wykonuje flashowanie.
+         Jeśli nie – firmware został przesłany, ale flashowanie zostanie pominięte.
     """
-
     if os.environ.get("GITHUB_ACTIONS"):
         print("Wykryto środowisko CI, pomijam post-build actions.")
         return
 
     print("Proces po kompilacji rozpoczęty...")
-    firmware_path_remote = os.path.abspath(str(target[0]))
-    firmware_path_local = "C:/Compiled/Firmware/firmware.bin"
+
+    # Wyznaczamy nazwę płytki na podstawie środowiska
+    board_name = env['PIOENV']
+    print(f"Wykryto nazwę płytki: {board_name}")
+
+    # Określamy oczekiwany typ chipu na podstawie nazwy płytki.
+    if "esp32" in board_name.lower():
+        expected_chip = "esp32"
+    else:
+        expected_chip = "esp8266"
+
+    # Określamy ścieżkę do firmware na podstawie środowiska
+    firmware_source_path = env.subst("$BUILD_DIR/firmware.bin")
+    firmware_source_path = os.path.abspath(firmware_source_path)
     
-    print("Firmware (Linux):", firmware_path_remote)
+    # Nadajemy unikalną nazwę pliku firmware, aby nie nadpisywał się przy kolejnych uploadach.
+    firmware_filename = f"firmware_{board_name}.bin"
+    firmware_path_local = os.path.join("C:/Compiled/Firmware", firmware_filename)
+
+    print("Firmware (Linux):", firmware_source_path)
     print("Firmware (Windows):", firmware_path_local)
     
     laptop_ip = get_client_ip()
-    if not laptop_ip:
-        print("Kompilacja zakończona sukcesem, ale upload został pominięty.")
+    # Nawet jeśli nie wykryjemy IP, wykonamy kopię pliku.
+    if laptop_ip:
+        print("Adres IP laptopa:", laptop_ip)
+        mkdir_cmd = f'ssh dot@{laptop_ip} "mkdir \\"C:/Compiled/Firmware\\" 2>nul"'
+        print("Tworzę katalog na laptopie:")
+        print(mkdir_cmd)
+        subprocess.run(mkdir_cmd, shell=True)
+        
+        scp_command = f'scp "{firmware_source_path}" dot@{laptop_ip}:"{firmware_path_local}"'
+        print("Wysyłam plik firmware:")
+        print(scp_command)
+        scp_result = subprocess.run(scp_command, shell=True, capture_output=True, text=True)
+        print("Wynik przesyłania pliku:")
+        print("STDOUT:", scp_result.stdout)
+        print("STDERR:", scp_result.stderr)
+        if scp_result.returncode != 0:
+            print("⚠️  Ostrzeżenie: Nie udało się przesłać pliku przez SCP.")
+    else:
+        print("Brak adresu IP – kopiowanie pliku na klienta zostało pominięte.")
+        # Jeśli nie mamy IP, nie próbujemy flashowania.
         return
 
-    print("Adres IP laptopa:", laptop_ip)
-    
-    mkdir_cmd = f'ssh dot@{laptop_ip} "mkdir \\"C:/Compiled/Firmware\\" 2>nul"'
-    print("Tworzę katalog na laptopie:")
-    print(mkdir_cmd)
-    subprocess.run(mkdir_cmd, shell=True)
-    
-    scp_command = f'scp "{firmware_path_remote}" dot@{laptop_ip}:"{firmware_path_local}"'
-    print("Wysyłam plik firmware:")
-    print(scp_command)
-    scp_result = subprocess.run(scp_command, shell=True, capture_output=True, text=True)
-    print("Wynik przesyłania pliku:")
-    print("STDOUT:", scp_result.stdout)
-    print("STDERR:", scp_result.stderr)
-    if scp_result.returncode != 0:
-        print("⚠️  Ostrzeżenie: Nie udało się przesłać pliku przez SCP. Upload pominięty.")
-        return
-
-    com_port, chip_type = get_com_port_and_chip(laptop_ip)
+    # Próbujemy wykryć urządzenie o oczekiwanym typie.
+    com_port, chip_type = get_com_port_and_chip(laptop_ip, expected_chip)
     if not com_port or not chip_type:
-        print("⚠️  Ostrzeżenie: Nie udało się wykryć ESP. Upload pominięty.")
+        print(f"Nie wykryto urządzenia typu '{expected_chip}'. Firmware został przesłany, flashowanie pominięte.")
         return
     
     print("Wykryty port COM:", com_port)
@@ -132,7 +158,7 @@ def after_build(source, target, env):
     print(erase_cmd)
     erase_result = subprocess.run(erase_cmd, shell=True)
     if erase_result.returncode != 0:
-        print("⚠️  Ostrzeżenie: Nie udało się wyczyścić ESP. Upload pominięty.")
+        print("⚠️  Ostrzeżenie: Nie udało się wyczyścić ESP. Flashowanie pominięte.")
         return
     
     flash_cmd = f'ssh dot@{laptop_ip} "python -m esptool --chip {chip_type} --port {com_port} --baud {baud_rate} write_flash 0x00000 \\"{firmware_path_local}\\""'
@@ -140,17 +166,10 @@ def after_build(source, target, env):
     print(flash_cmd)
     flash_result = subprocess.run(flash_cmd, shell=True)
     if flash_result.returncode != 0:
-        print("⚠️  Ostrzeżenie: Nie udało się wgrać firmware na ESP. Upload pominięty.")
+        print("⚠️  Ostrzeżenie: Nie udało się wgrać firmware na ESP. Flashowanie pominięte.")
         return
     
     print("✅ Flashowanie zakończone sukcesem!")
 
-# Wymusza wykonanie post-akcji za każdym razem
-env.AlwaysBuild(".pio/build/esp01_1m/firmware.bin")
-env.AlwaysBuild(".pio/build/nodemcuv2/firmware.bin")
-env.AlwaysBuild(".pio/build/esp32dev/firmware.bin")
-
-# Dodajemy post-akcje dla każdego środowiska
-env.AddPostAction(".pio/build/esp01_1m/firmware.bin", after_build)
-env.AddPostAction(".pio/build/nodemcuv2/firmware.bin", after_build)
-env.AddPostAction(".pio/build/esp32dev/firmware.bin", after_build)
+# Dodajemy post-akcję dla celu "buildprog", który triggeruje się po budowie firmware
+env.AddPostAction("buildprog", after_build)
