@@ -29,16 +29,12 @@ def get_client_ip():
             ip = parts[0]
             print(f"Wykryty adres IP klienta: {ip}")
             return ip
-    print("Błąd: Nie udało się wykryć adresu IP klienta (SSH_CONNECTION).")
-    env.Exit(1)
+    print("⚠️  Ostrzeżenie: Nie udało się wykryć adresu IP klienta (SSH_CONNECTION). Pomijam upload.")
+    return None
 
 def get_com_port_and_chip(laptop_ip):
     """
     Wykrywa port COM na laptopie Windows, na którym podłączone jest ESP, oraz określa typ układu.
-    Uruchamia zdalnie polecenie Pythona, które wypisuje dostępne porty COM,
-    a następnie testuje każdy z nich przy użyciu esptool.
-    Zwraca krotkę (port, chip_type) gdzie chip_type to "esp8266" lub "esp32".
-    (ESP01 jest wariantem esp8266.)
     """
     print("Rozpoczynam wykrywanie portów COM na laptopie:", laptop_ip)
     remote_cmd = 'python -c "import serial.tools.list_ports; print(\\"\\\\n\\".join([p.device for p in serial.tools.list_ports.comports()]))"'
@@ -52,12 +48,11 @@ def get_com_port_and_chip(laptop_ip):
     print("STDERR:", result.stderr)
     if result.returncode != 0:
         print("Błąd wykonywania polecenia do wykrycia portów.")
-        env.Exit(1)
+        return None, None
     
     ports = [line.strip() for line in result.stdout.splitlines() if line.strip()]
     print("Znalezione porty:", ports)
     
-    # Testujemy każdy port – sprawdzamy, czy esptool zwraca komunikat charakterystyczny dla ESP
     for port in ports:
         test_cmd = f"ssh dot@{laptop_ip} 'python -m esptool --port {port} --after no_reset chip_id'"
         print(f"Testowanie portu {port} za pomocą polecenia:")
@@ -77,40 +72,40 @@ def get_com_port_and_chip(laptop_ip):
             return port, chip_type
 
     print("Błąd: Nie wykryto ESP na żadnym z dostępnych portów.")
-    env.Exit(1)
+    return None, None
 
 def after_build(source, target, env):
     """
     Po kompilacji:
-      1. Przesyłamy firmware (firmware.bin) z Linuxa na laptopa z Windows.
-      2. Wykrywamy na laptopie port COM, na którym jest ESP, oraz określamy typ chipu.
-      3. Czyścimy ESP (erase_flash).
-      4. Wgrywamy firmware na ESP przy użyciu esptool, przekazując jawnie typ chipu i baud rate.
+      1. Przesyłamy firmware na laptopa.
+      2. Wykrywamy port COM i typ chipu.
+      3. Czyścimy flash.
+      4. Flashujemy firmware.
     """
+
     if os.environ.get("GITHUB_ACTIONS"):
         print("Wykryto środowisko CI, pomijam post-build actions.")
         return
 
     print("Proces po kompilacji rozpoczęty...")
-    # Ścieżka do firmware skompilowanego na Linuxie
     firmware_path_remote = os.path.abspath(str(target[0]))
-    # Docelowa ścieżka na laptopie (Windows)
     firmware_path_local = "C:/Compiled/Firmware/firmware.bin"
     
     print("Firmware (Linux):", firmware_path_remote)
     print("Firmware (Windows):", firmware_path_local)
     
-    # Pobierz adres IP klienta (laptopa Windows) z SSH_CONNECTION
     laptop_ip = get_client_ip()
+    if not laptop_ip:
+        print("Kompilacja zakończona sukcesem, ale upload został pominięty.")
+        return
+
     print("Adres IP laptopa:", laptop_ip)
     
-    # Utworzenie katalogu na laptopie (przez SSH na Windows)
     mkdir_cmd = f'ssh dot@{laptop_ip} "mkdir \\"C:/Compiled/Firmware\\" 2>nul"'
     print("Tworzę katalog na laptopie:")
     print(mkdir_cmd)
     subprocess.run(mkdir_cmd, shell=True)
     
-    # Przesyłanie pliku firmware z Linuxa na laptopa Windows przez SCP
     scp_command = f'scp "{firmware_path_remote}" dot@{laptop_ip}:"{firmware_path_local}"'
     print("Wysyłam plik firmware:")
     print(scp_command)
@@ -119,36 +114,43 @@ def after_build(source, target, env):
     print("STDOUT:", scp_result.stdout)
     print("STDERR:", scp_result.stderr)
     if scp_result.returncode != 0:
-        print("Błąd: Nie udało się przesłać pliku przez SCP.")
-        env.Exit(1)
-    
-    # Wykrycie portu COM oraz typu ESP
+        print("⚠️  Ostrzeżenie: Nie udało się przesłać pliku przez SCP. Upload pominięty.")
+        return
+
     com_port, chip_type = get_com_port_and_chip(laptop_ip)
+    if not com_port or not chip_type:
+        print("⚠️  Ostrzeżenie: Nie udało się wykryć ESP. Upload pominięty.")
+        return
+    
     print("Wykryty port COM:", com_port)
     print("Wykryty typ chipu:", chip_type)
     
-    # Parametry przyspieszające flashowanie – ustaw baud rate (dostosuj w razie potrzeby)
     baud_rate = 921600
 
-    # Czyszczenie ESP przed flashowaniem – erase_flash
     erase_cmd = f'ssh dot@{laptop_ip} "python -m esptool --chip {chip_type} --port {com_port} --baud {baud_rate} erase_flash"'
     print("Czyszczenie ESP (erase_flash):")
     print(erase_cmd)
     erase_result = subprocess.run(erase_cmd, shell=True)
     if erase_result.returncode != 0:
-        print("Błąd: Nie udało się wyczyścić ESP.")
-        env.Exit(1)
+        print("⚠️  Ostrzeżenie: Nie udało się wyczyścić ESP. Upload pominięty.")
+        return
     
-    # Flashowanie firmware na ESP przy użyciu esptool
     flash_cmd = f'ssh dot@{laptop_ip} "python -m esptool --chip {chip_type} --port {com_port} --baud {baud_rate} write_flash 0x00000 \\"{firmware_path_local}\\""'
     print("Rozpoczynam flashowanie przy użyciu polecenia:")
     print(flash_cmd)
     flash_result = subprocess.run(flash_cmd, shell=True)
     if flash_result.returncode != 0:
-        print("Błąd: Nie udało się wgrać firmware na ESP.")
-        env.Exit(1)
-    print("Flashowanie zakończone sukcesem!")
+        print("⚠️  Ostrzeżenie: Nie udało się wgrać firmware na ESP. Upload pominięty.")
+        return
+    
+    print("✅ Flashowanie zakończone sukcesem!")
 
 # Wymusza wykonanie post-akcji za każdym razem
-env.AlwaysBuild("$BUILD_DIR/${PROGNAME}.bin")
-env.AddPostAction("$BUILD_DIR/${PROGNAME}.bin", after_build)
+env.AlwaysBuild(".pio/build/esp01_1m/firmware.bin")
+env.AlwaysBuild(".pio/build/nodemcuv2/firmware.bin")
+env.AlwaysBuild(".pio/build/esp32dev/firmware.bin")
+
+# Dodajemy post-akcje dla każdego środowiska
+env.AddPostAction(".pio/build/esp01_1m/firmware.bin", after_build)
+env.AddPostAction(".pio/build/nodemcuv2/firmware.bin", after_build)
+env.AddPostAction(".pio/build/esp32dev/firmware.bin", after_build)
