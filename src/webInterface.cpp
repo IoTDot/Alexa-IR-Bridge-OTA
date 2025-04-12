@@ -8,78 +8,142 @@ static WebServerType* webServer = nullptr;
 
 // HTML interfejsu zapisany w pamięci flash
 const char index_html[] PROGMEM = R"rawliteral(
-<!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <title>Konfiguracja urządzeń</title>
-    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
-  </head>
-  <body class="container mt-4">
-    <h1 class="mb-4">Konfiguracja urządzeń</h1>
-    <form id="deviceForm" class="mb-4">
-      <div class="form-group">
-        <label for="name">Nazwa urządzenia:</label>
-        <input type="text" id="name" class="form-control" required>
+  <!DOCTYPE html>
+  <html>
+    <head>
+      <meta charset="utf-8">
+      <title>Konfiguracja urządzeń</title>
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css">
+      <style>
+        body {
+          background-color: #000000;
+          color: #ffffff;
+          min-height: 100vh;
+        }
+        .custom-card {
+          background-color: #1a1a1a;
+          border-radius: 15px;
+          padding: 20px;
+          margin-bottom: 20px;
+          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+        .form-control {
+          background-color: #333333;
+          color: #ffffff;
+          border: 1px solid #444444;
+        }
+        .form-control:focus {
+          background-color: #444444;
+          color: #ffffff;
+          border-color: #666666;
+          box-shadow: none;
+        }
+        .btn-primary {
+          background-color: #0069d9;
+          border-color: #0062cc;
+        }
+        .btn-danger {
+          background-color: #dc3545;
+          border-color: #dc3545;
+        }
+        .list-group-item {
+          background-color: #222222;
+          color: #ffffff;
+          border: 1px solid #333333;
+        }
+      </style>
+    </head>
+    <body class="p-4">
+      <div class="container-lg">
+        <div class="custom-card">
+          <h1 class="mb-4 text-center">Konfiguracja urządzeń</h1>
+          
+          <div class="row">
+            <div class="col-md-6 mb-4">
+              <div class="custom-card">
+                <h4 class="mb-3">Dodaj nowe urządzenie</h4>
+                <form id="deviceForm">
+                  <div class="mb-3">
+                    <label for="name" class="form-label">Nazwa urządzenia</label>
+                    <input type="text" id="name" class="form-control" required>
+                  </div>
+                  <div class="mb-3">
+                    <label for="ircode" class="form-label">Kod IR (hex)</label>
+                    <input type="text" id="ircode" class="form-control" required>
+                  </div>
+                  <div class="mb-3">
+                    <label for="protocol" class="form-label">Protokół</label>
+                    <select id="protocol" class="form-select">
+                      <option value="0">SAMSUNG</option>
+                      <option value="1">EPSON</option>
+                      <option value="2">Symphony</option>
+                    </select>
+                  </div>
+                  <button type="button" class="btn btn-primary w-100" onclick="addDevice()">
+                    <i class="bi bi-plus-circle"></i> Dodaj urządzenie
+                  </button>
+                </form>
+              </div>
+            </div>
+  
+            <div class="col-md-6">
+              <div class="custom-card">
+                <h4 class="mb-3">Lista urządzeń</h4>
+                <div id="deviceList" class="list-group mb-3"></div>
+                <button class="btn btn-success w-100" onclick="saveConfig()">
+                  <i class="bi bi-save"></i> Zapisz konfigurację
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="form-group">
-        <label for="ircode">Kod IR (hex):</label>
-        <input type="text" id="ircode" class="form-control" required>
-      </div>
-      <div class="form-group">
-        <label for="protocol">Protokół:</label>
-        <select id="protocol" class="form-control">
-          <option value="0">SAMSUNG</option>
-          <option value="1">EPSON</option>
-          <option value="2">Symphony</option>
-        </select>
-      </div>
-      <button type="button" class="btn btn-primary" onclick="addDevice()">Dodaj urządzenie</button>
-    </form>
-    <h2>Lista urządzeń</h2>
-    <ul id="deviceList" class="list-group mb-4"></ul>
-    <button class="btn btn-success" onclick="saveConfig()">Zapisz konfigurację</button>
-    <script>
-      function addDevice() {
-        var name = document.getElementById("name").value;
-        var ircode = document.getElementById("ircode").value;
-        var protocol = document.getElementById("protocol").value;
-        var xhr = new XMLHttpRequest();
-        xhr.open("GET", "/add?name=" + encodeURIComponent(name) + "&ircode=" + encodeURIComponent(ircode) + "&protocol=" + protocol, true);
-        xhr.send();
-        setTimeout(loadDevices, 500);
-      }
+  
+      <script>
+        // Funkcje JavaScript pozostają bez zmian
+        function addDevice() {
+          var name = document.getElementById("name").value;
+          var ircode = document.getElementById("ircode").value;
+          var protocol = document.getElementById("protocol").value;
+          var xhr = new XMLHttpRequest();
+          xhr.open("GET", "/add?name=" + encodeURIComponent(name) + "&ircode=" + encodeURIComponent(ircode) + "&protocol=" + protocol, true);
+          xhr.send();
+          setTimeout(loadDevices, 500);
+        }
+        
+        function loadDevices() {
+          var xhr = new XMLHttpRequest();
+          xhr.onreadystatechange = function() {
+            if (this.readyState == 4 && this.status == 200) {
+              document.getElementById("deviceList").innerHTML = this.responseText;
+            }
+          };
+          xhr.open("GET", "/list", true);
+          xhr.send();
+        }
+        
+        function removeDevice(index) {
+          var xhr = new XMLHttpRequest();
+          xhr.open("GET", "/remove?index=" + index, true);
+          xhr.send();
+          setTimeout(loadDevices, 500);
+        }
+        
+        function saveConfig() {
+          var xhr = new XMLHttpRequest();
+          xhr.open("GET", "/save", true);
+          xhr.send();
+          alert("Konfiguracja zapisana. Urządzenie zostanie zrestartowane.");
+        }
+        
+        window.onload = loadDevices;
+      </script>
       
-      function loadDevices() {
-        var xhr = new XMLHttpRequest();
-        xhr.onreadystatechange = function() {
-          if (this.readyState == 4 && this.status == 200) {
-            document.getElementById("deviceList").innerHTML = this.responseText;
-          }
-        };
-        xhr.open("GET", "/list", true);
-        xhr.send();
-      }
-      
-      function removeDevice(index) {
-        var xhr = new XMLHttpRequest();
-        xhr.open("GET", "/remove?index=" + index, true);
-        xhr.send();
-        setTimeout(loadDevices, 500);
-      }
-      
-      function saveConfig() {
-        var xhr = new XMLHttpRequest();
-        xhr.open("GET", "/save", true);
-        xhr.send();
-        alert("Konfiguracja zapisana. Urządzenie zostanie zrestartowane.");
-      }
-      
-      window.onload = loadDevices;
-    </script>
-  </body>
-</html>
-)rawliteral";
+      <!-- Bootstrap Icons -->
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    </body>
+  </html>
+  )rawliteral";
 
 // Handler – dodanie urządzenia
 void handleAdd() {
