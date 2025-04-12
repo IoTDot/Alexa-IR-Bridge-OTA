@@ -137,6 +137,8 @@ void setupWiFi() {
   pinMode(CONNECTED_LED, OUTPUT);
   digitalWrite(CONNECTED_LED, HIGH);
 
+  //WiFiManger dostępny pod adresem 192.168.4.1
+
   wifiManager.setSaveConfigCallback(saveConfigCallback);
   if (!wifiManager.autoConnect("IrAlexa", "iralexa123")) {
     Serial.println("Nie udało się połączyć, timeout");
@@ -152,6 +154,8 @@ void setupWiFi() {
   Serial.printf("[WIFI] SSID: %s, IP: %s\n", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
 }
 
+void sendIRSignal(const Device &device);
+
 void setupFauxmo() {
   fauxmo.createServer(true);
   fauxmo.setPort(80);
@@ -163,7 +167,12 @@ void setupFauxmo() {
   fauxmo.onSetState([](unsigned char device_id, const char *device_name, bool state, unsigned char value) {
     Serial.printf("[FAUXMO] Alexa wysłała komendę do urządzenia #%d (%s): %s, wartość: %d\n",
                   device_id, device_name, state ? "ON" : "OFF", value);
-    // Wywołaj wysłanie sygnału IR lub inne działania
+    // Przykładowe wywołanie sygnału IR dla wybranego urządzenia:
+    if (device_id < numDevices) {
+      sendIRSignal(devices[device_id]);
+    } else {
+      Serial.println("Nieprawidłowy numer urządzenia");
+    }
   });
 }
 
@@ -187,8 +196,10 @@ void sendIRSignal(const Device &device) {
 void processIR() {
   // Przykładowa funkcja przetwarzająca wysłanie sygnału IR – do uzupełnienia wg potrzeb
 }
-
-void handleButton() {
+  // 3 razy naciśnij przycisk, aby przełączyć tryb konfiguracji
+  // interfejs jest dostępny po wejsciu na adres IP ESP w przeglądarce plus port 8080
+  // np. http://192.168.50.245:8080
+  void handleButton() {
   static uint8_t pressCount = 0;
   static bool lastButtonState = HIGH;
   bool currentButtonState = digitalRead(BOOT_BUTTON_PIN);

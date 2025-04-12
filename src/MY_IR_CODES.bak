@@ -1,0 +1,8 @@
+    {"TV", 0xE0E040BF, 0}, // TV Turn ON or OFF
+    {"Skip", 0xE0E016E9, 0}, // TV OK button
+    {"Mute", 0x8322EE11, 1}, // TV Mute
+    {"Speaker Plus", 0x8322E21D, 1}, //Speakers Volume UP
+    {"Speaker Minus", 0x8322E31C, 1}, //Speakers Volume Down
+    {"Speakers", 0x8322E11E, 1}, // Speakers Turn ON or OFF
+    {"Fan", 0xD82, 2}, // Fan ON
+    {"Fan 1", 0xD81, 2}}; // Fan OFF
