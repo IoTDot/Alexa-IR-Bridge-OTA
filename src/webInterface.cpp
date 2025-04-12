@@ -25,7 +25,6 @@ const char index_html[] PROGMEM = R"rawliteral(
           border-radius: 15px;
           padding: 20px;
           margin-bottom: 20px;
-          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
         }
         .form-control {
           background-color: #333333;
@@ -199,9 +198,12 @@ void handleRemove() {
 void handleList() {
   String listHTML = "";
   for (uint8_t i = 0; i < numDevices; i++) {
-    listHTML += "<li>" + devices[i].deviceName + " (IR: " + String(devices[i].irCode, HEX) +
-                ", protokół: " + String(devices[i].protocol) + ") " +
-                "<button onclick='removeDevice(" + String(i) + ")'>Usuń</button></li>";
+    listHTML += "<div class='list-group-item d-flex justify-content-between align-items-center'>";
+    listHTML += "<div><strong>" + devices[i].deviceName + "</strong><br>";
+    listHTML += "<small class='text-muted'>IR: " + String(devices[i].irCode, HEX) + "</small><br>";
+    listHTML += "<small class='text-muted'>Protokół: " + String(devices[i].protocol) + "</small></div>";
+    listHTML += "<button class='btn btn-danger btn-sm' onclick='removeDevice(" + String(i) + ")'><i class='bi bi-trash'></i></button>";
+    listHTML += "</div>";
   }
   webServer->send(200, "text/html", listHTML);
 }
