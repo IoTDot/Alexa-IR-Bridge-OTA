@@ -137,10 +137,15 @@ void setupWiFi() {
   pinMode(CONNECTED_LED, OUTPUT);
   digitalWrite(CONNECTED_LED, HIGH);
 
-  //WiFiManger dostępny pod adresem 192.168.4.1
-
+  // Ustawienia AP (hotspot) dostęp z przeglądarki po adresie 4.4.4.4
+  IPAddress apIP(4, 4, 4, 4);
+  IPAddress gateway(4, 4, 4, 4);
+  IPAddress subnet(255, 255, 255, 0);
+  wifiManager.setAPStaticIPConfig(apIP, gateway, subnet);  // Zmiana adresu AP
+  
+  // Hotspot bez hasła
   wifiManager.setSaveConfigCallback(saveConfigCallback);
-  if (!wifiManager.autoConnect("IrAlexa", "iralexa123")) {
+  if (!wifiManager.autoConnect("IrAlexa")) { // Usunięto parametr z hasłem
     Serial.println("Nie udało się połączyć, timeout");
     delay(3000);
   } else {
@@ -167,7 +172,7 @@ void setupFauxmo() {
   fauxmo.onSetState([](unsigned char device_id, const char *device_name, bool state, unsigned char value) {
     Serial.printf("[FAUXMO] Alexa wysłała komendę do urządzenia #%d (%s): %s, wartość: %d\n",
                   device_id, device_name, state ? "ON" : "OFF", value);
-    // Przykładowe wywołanie sygnału IR dla wybranego urządzenia:
+    // Wywołanie sygnału IR dla wybranego urządzenia:
     if (device_id < numDevices) {
       sendIRSignal(devices[device_id]);
     } else {
@@ -194,7 +199,7 @@ void sendIRSignal(const Device &device) {
 }
 
 void processIR() {
-  // Przykładowa funkcja przetwarzająca wysłanie sygnału IR – do uzupełnienia wg potrzeb
+
 }
   // 3 razy naciśnij przycisk, aby przełączyć tryb konfiguracji
   // interfejs jest dostępny po wejsciu na adres IP ESP w przeglądarce plus port 8080
