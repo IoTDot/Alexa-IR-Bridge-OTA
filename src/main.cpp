@@ -8,9 +8,11 @@
 #include <LittleFS.h>
 
 #if defined(ESP8266)
+  #include <ESP8266mDNS.h>
   #include <ESP8266WiFi.h>
   #include <ESP8266WebServer.h>
 #else
+  #include <ESPmDNS.h>
   #include <WiFi.h>
   #include <WebServer.h>
 #endif
@@ -41,11 +43,20 @@ fauxmoESP fauxmo;
 WiFiManager wifiManager;
 Ticker irTicker;
 
+// Serwer fauxmo na porcie 80
 #if defined(ESP8266)
 ESP8266WebServer server(80);
 #else
 WebServer server(80);
 #endif
+
+// Serwer konfiguracji na porcie 8080
+#if defined(ESP8266)
+ESP8266WebServer configServer(8080);
+#else
+WebServer configServer(8080);
+#endif
+
 
 bool shouldSaveConfig = false;
 bool configMode = false;  // Tryb konfiguracji – gdy true, uruchamiamy webowy interfejs
@@ -150,6 +161,7 @@ void setupWiFi() {
     delay(3000);
   } else {
     Serial.println("Połączono z WiFi");
+    
     if (shouldSaveConfig) {
       Serial.println("Konfiguracja została zapisana");
       ESP.restart();
@@ -205,34 +217,60 @@ void processIR() {
   // interfejs jest dostępny po wejsciu na adres IP ESP w przeglądarce plus port 8080
   // np. http://192.168.50.245:8080
   void handleButton() {
-  static uint8_t pressCount = 0;
-  static bool lastButtonState = HIGH;
-  bool currentButtonState = digitalRead(BOOT_BUTTON_PIN);
-  if (currentButtonState != lastButtonState) {
-    delay(50);
-    currentButtonState = digitalRead(BOOT_BUTTON_PIN);
-  }
-  if (currentButtonState == LOW && lastButtonState == HIGH) {
-    pressCount++;
-    if (pressCount >= 3) {
-      configMode = !configMode;
-      if (configMode) {
-        Serial.println("Włączono tryb konfiguracji");
-        // Wyłączamy fauxmo, aby zwolnić port 80
-        fauxmo.enable(false);
-        setupWebInterface(server);
-      } else {
-        Serial.println("Wyłączono tryb konfiguracji");
-        stopWebInterface(server);
-        // Przywracamy działanie fauxmo
-        fauxmo.enable(true);
-      }
-      pressCount = 0;
+    static uint8_t pressCount = 0;
+    static bool lastButtonState = HIGH;
+    static unsigned long pressStartTime = 0;
+    bool currentButtonState = digitalRead(BOOT_BUTTON_PIN);
+  
+    if (currentButtonState != lastButtonState) {
+      delay(50);
+      currentButtonState = digitalRead(BOOT_BUTTON_PIN);
     }
-  }
-  lastButtonState = currentButtonState;
-}
-
+  
+    if (currentButtonState == LOW) {
+      if (lastButtonState == HIGH) {
+        pressStartTime = millis();
+      }
+      if (millis() - pressStartTime >= 5000) {
+        Serial.println("Przytrzymanie 5 sekund - reset Wi-Fi");
+        wifiManager.resetSettings();
+        WiFi.disconnect(true);
+        delay(100);
+        ESP.restart();
+      }
+    }
+  
+    if (currentButtonState == HIGH && lastButtonState == LOW) {
+      if (millis() - pressStartTime < 5000) {
+        pressCount++;
+        if (pressCount >= 3) {
+          configMode = !configMode;
+          if (configMode) {
+            Serial.println("Włączono tryb konfiguracji");
+            fauxmo.enable(false);
+            // Uruchamiamy konfigurator na oddzielnym serwerze na porcie 8080:
+            setupWebInterface(configServer);
+            if (WiFi.status() == WL_CONNECTED) {
+              if (MDNS.begin("iralexa")) {
+                Serial.println("mDNS aktywny jako iralexa.local");
+                MDNS.addService("http", "tcp", 8080);
+              } else {
+                Serial.println("Nie udało się uruchomić mDNS");
+              }
+            }
+          } else {
+            Serial.println("Wyłączono tryb konfiguracji");
+            MDNS.end();
+            stopWebInterface(configServer);
+            fauxmo.enable(true);
+          }
+          pressCount = 0;
+        }
+      }
+      pressStartTime = 0;
+    }
+    lastButtonState = currentButtonState;
+  }  
 
 void setup() {
   Serial.begin(115200);
@@ -244,6 +282,7 @@ void setup() {
   if (!LittleFS.begin()) {
     Serial.println("Błąd montowania LittleFS");
   }
+
   loadDevicesConfig();
   setupFauxmo();
   irTicker.attach_ms(100, processIR);
@@ -251,10 +290,14 @@ void setup() {
 
 void loop() {
   handleButton();
-  if (!configMode) {
-    fauxmo.handle();
+
+  if (configMode) {
+    MDNS.update();
+    configServer.handleClient();
   } else {
-    server.handleClient();
+    fauxmo.handle();
   }
+
   digitalWrite(CONNECTED_LED, (WiFi.status() == WL_CONNECTED));
 }
+
