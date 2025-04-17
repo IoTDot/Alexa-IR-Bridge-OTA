@@ -221,56 +221,59 @@ void processIR() {
     static bool lastButtonState = HIGH;
     static unsigned long pressStartTime = 0;
     bool currentButtonState = digitalRead(BOOT_BUTTON_PIN);
-  
+
     if (currentButtonState != lastButtonState) {
-      delay(50);
-      currentButtonState = digitalRead(BOOT_BUTTON_PIN);
+        delay(50);
+        currentButtonState = digitalRead(BOOT_BUTTON_PIN);
     }
-  
+
     if (currentButtonState == LOW) {
-      if (lastButtonState == HIGH) {
-        pressStartTime = millis();
-      }
-      if (millis() - pressStartTime >= 5000) {
-        Serial.println("Przytrzymanie 5 sekund - reset Wi-Fi");
-        wifiManager.resetSettings();
-        WiFi.disconnect(true);
-        delay(100);
-        ESP.restart();
-      }
-    }
-  
-    if (currentButtonState == HIGH && lastButtonState == LOW) {
-      if (millis() - pressStartTime < 5000) {
-        pressCount++;
-        if (pressCount >= 3) {
-          configMode = !configMode;
-          if (configMode) {
-            Serial.println("Włączono tryb konfiguracji");
-            fauxmo.enable(false);
-            // Uruchamiamy konfigurator na oddzielnym serwerze na porcie 8080:
-            setupWebInterface(configServer);
-            if (WiFi.status() == WL_CONNECTED) {
-              if (MDNS.begin("iralexa")) {
-                Serial.println("mDNS aktywny jako iralexa.local");
-                MDNS.addService("http", "tcp", 8080);
-              } else {
-                Serial.println("Nie udało się uruchomić mDNS");
-              }
-            }
-          } else {
-            Serial.println("Wyłączono tryb konfiguracji");
-            MDNS.end();
-            stopWebInterface(configServer);
-            fauxmo.enable(true);
-          }
-          pressCount = 0;
+        if (lastButtonState == HIGH) {
+            pressStartTime = millis();
         }
-      }
-      pressStartTime = 0;
+        if (millis() - pressStartTime >= 5000) {
+            Serial.println("Przytrzymanie 5 sekund - reset Wi-Fi");
+            wifiManager.resetSettings();
+            WiFi.disconnect(true);
+            delay(100);
+            ESP.restart();
+        }
+    }
+
+    if (currentButtonState == HIGH && lastButtonState == LOW) {
+        if (millis() - pressStartTime < 5000) {
+            pressCount++;
+            if (pressCount >= 3) {
+                configMode = !configMode;
+                if (configMode) {
+                    Serial.println("Włączono tryb konfiguracji");
+                    fauxmo.enable(false);
+                    // Uruchom serwer konfiguracyjny na porcie 8080
+                    setupWebInterface(configServer);
+                    configServer.begin(); // Rozpocznij nasłuchiwanie na porcie 8080
+                    if (WiFi.status() == WL_CONNECTED) {
+                        WiFi.hostname("iralexa"); // Ustaw nazwę hosta
+                        if (MDNS.begin("iralexa")) {
+                            Serial.println("mDNS aktywny jako iralexa.local");
+                            MDNS.addService("http", "tcp", 8080);
+                            MDNS.announce();
+                        } else {
+                            Serial.println("Nie udało się uruchomić mDNS");
+                        }
+                    }
+                } else {
+                    Serial.println("Wyłączono tryb konfiguracji");
+                    configServer.close(); // Zatrzymaj serwer konfiguracyjny
+                    MDNS.end();
+                    fauxmo.enable(true);
+                }
+                pressCount = 0;
+            }
+        }
+        pressStartTime = 0;
     }
     lastButtonState = currentButtonState;
-  }  
+}
 
 void setup() {
   Serial.begin(115200);
@@ -300,4 +303,3 @@ void loop() {
 
   digitalWrite(CONNECTED_LED, (WiFi.status() == WL_CONNECTED));
 }
-
