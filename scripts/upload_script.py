@@ -2,49 +2,93 @@
 Import("env")
 import os
 import socket
-import paramiko
-import time
 import sys
+import time
+import logging
+from pathlib import Path
+from typing import Optional, Tuple, List
 
-SSH_USER = "dot"
-SSH_PORT = 22
-SSH_KEY = os.path.expanduser("~/.ssh/id_ed25519")  # lub zmień według potrzeb
+import paramiko
 
-def get_client_ip():
-    print("Sprawdzam zmienne SSH_CONNECTION, SSH_CLIENT oraz CLIENT_IP...")
+# Konfiguracja loggera
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
+logger = logging.getLogger(__name__)
+
+# Stałe SSH
+SSH_USER: str = "dot"
+SSH_PORT: int = 22
+SSH_KEY: Path = Path.home() / ".ssh" / "id_ed25519"
+
+# Mapa obsługiwanych płytek -> (chip, token)
+BOARD_MAP = {
+    "esp01": ("esp8266", "esp01"),
+    "nodemcuv2": ("esp8266", "esp8266"),
+    "esp32": ("esp32", None),
+}
+
+
+def get_client_ip() -> Optional[str]:
+    """
+    Wykrywa adres IP klienta przez zmienne środowiskowe SSH_CONNECTION, SSH_CLIENT lub CLIENT_IP.
+    """
+    logger.debug("Sprawdzam zmienne SSH_CONNECTION, SSH_CLIENT oraz CLIENT_IP...")
     ssh_conn = os.environ.get("SSH_CONNECTION") or os.environ.get("SSH_CLIENT")
     if ssh_conn:
         ip = ssh_conn.split()[0]
-        print(f"Wykryty adres IP klienta: {ip}")
+        logger.info("Wykryty adres IP klienta: %s", ip)
         return ip
+
     client_ip = os.environ.get("CLIENT_IP")
     if client_ip:
-        print(f"Używam ręcznie ustawionego CLIENT_IP: {client_ip}")
+        logger.info("Używam ręcznie ustawionego CLIENT_IP: %s", client_ip)
         return client_ip
-    print("⚠️ Nie udało się wykryć IP klienta. Upload tylko do pliku.")
+
+    logger.warning("Nie udało się wykryć IP klienta. Upload tylko do pliku.")
     return None
 
-def ssh_connect(ip, timeout=5):
+
+def ssh_connect(ip: str, timeout: int = 5) -> paramiko.SSHClient:
+    """
+    Nawiązuje połączenie SSH z podanym adresem IP.
+    """
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    print(f"Łączę z {ip} przez SSH (timeout {timeout}s)...")
+    logger.info("Łączę z %s przez SSH (timeout %ss)...", ip, timeout)
     client.connect(
-        ip, port=SSH_PORT, username=SSH_USER,
-        key_filename=SSH_KEY, timeout=timeout,
-        allow_agent=True, look_for_keys=True
+        hostname=ip,
+        port=SSH_PORT,
+        username=SSH_USER,
+        key_filename=str(SSH_KEY),
+        timeout=timeout,
+        allow_agent=True,
+        look_for_keys=True,
     )
     return client
 
-def run_cmd(client, cmd, timeout=10, get_pty=False):
+
+def run_cmd(
+    client: paramiko.SSHClient,
+    cmd: str,
+    timeout: int = 10,
+    get_pty: bool = False,
+) -> Tuple[int, str, str]:
+    """
+    Wykonuje zdalne polecenie i zwraca (kod wyjścia, stdout, stderr).
+    """
     stdin, stdout, stderr = client.exec_command(cmd, timeout=timeout, get_pty=get_pty)
-    out = stdout.read().decode(errors="ignore")
-    err = stderr.read().decode(errors="ignore")
+    out = stdout.read().decode(errors="replace")
+    err = stderr.read().decode(errors="replace")
     rc = stdout.channel.recv_exit_status()
     return rc, out, err
 
-def run_cmd_live(client, cmd, timeout=None):
+
+def run_cmd_live(client: paramiko.SSHClient, cmd: str) -> int:
     """
-    Wykonuje komendę SSH i wypisuje output na żywo, bez resetowania terminala.
+    Wykonuje komendę SSH i wypisuje output na żywo.
     """
     transport = client.get_transport()
     channel = transport.open_session()
@@ -71,41 +115,59 @@ def run_cmd_live(client, cmd, timeout=None):
 
     return channel.recv_exit_status()
 
-def mkdir_remote(client, path):
+
+def mkdir_remote(client: paramiko.SSHClient, path: str) -> None:
+    """
+    Tworzy zdalny katalog w Windows-ie (jeśli nie istnieje).
+    """
     cmd = f'if not exist "{path}" mkdir "{path}"'
-    rc, out, err = run_cmd(client, cmd, timeout=10)
-    print(f" mkdir rc={rc}  out={out.strip()}  err={err.strip()}")
+    rc, out, err = run_cmd(client, cmd)
+    logger.debug("mkdir rc=%d out=%s err=%s", rc, out.strip(), err.strip())
 
-def sftp_upload(client, local, remote):
-    print(f"Kopiuję plik {local} → {remote}")
-    sftp = client.open_sftp()
-    remote_dir = os.path.dirname(remote)
-    try:
-        sftp.stat(remote_dir)
-    except IOError:
-        print("Katalog nie istnieje, tworzę:", remote_dir)
-        mkdir_remote(client, remote_dir)
-    sftp.put(local, remote)
-    sftp.close()
-    print("Kopiowanie zakończone.")
 
-def list_com_ports(client):
+def sftp_upload(client: paramiko.SSHClient, local: Path, remote: str) -> None:
+    """
+    Uploaduje plik lokalny na zdalny serwer.
+    """
+    logger.info("Kopiuję plik %s → %s", local, remote)
+    with client.open_sftp() as sftp:
+        remote_dir = os.path.dirname(remote)
+        try:
+            sftp.stat(remote_dir)
+        except IOError:
+            logger.info("Katalog nie istnieje, tworzę: %s", remote_dir)
+            mkdir_remote(client, remote_dir)
+        sftp.put(str(local), remote)
+    logger.info("Kopiowanie zakończone.")
+
+
+def list_com_ports(client: paramiko.SSHClient) -> List[str]:
+    """
+    Zwraca listę portów COM na zdalnej maszynie.
+    """
     code = (
         "import serial.tools.list_ports;"
         "print('\\n'.join(p.device for p in serial.tools.list_ports.comports()))"
     )
-    rc, out, err = run_cmd(client, f'python -c "{code}"', timeout=5)
-    print("LIST_COM rc=", rc, " out=", out.strip(), " err=", err.strip())
+    cmd = f'python -c "{code}"'
+    rc, out, err = run_cmd(client, cmd)
+    logger.debug("LIST_COM rc=%d out=%s err=%s", rc, out.strip(), err.strip())
     if rc != 0:
         return []
     return [l.strip() for l in out.splitlines() if l.strip()]
 
-def detect_chip(client, port, expected_chip):
-    cmd = (
-        f'python -m esptool --chip {expected_chip or ""} '
-        f'--port {port} --baud 115200 chip_id'
-    )
-    rc, out, err = run_cmd(client, cmd, timeout=10, get_pty=True)
+
+def detect_chip(
+    client: paramiko.SSHClient,
+    port: str,
+    expected_chip: Optional[str],
+) -> Optional[str]:
+    """
+    Wykrywa rodzaj układu (ESP8266/ESP32) na podanym porcie.
+    """
+    chip_arg = f"--chip {expected_chip}" if expected_chip else ""
+    cmd = f'python -m esptool {chip_arg} --port {port} --baud 115200 chip_id'
+    rc, out, err = run_cmd(client, cmd, get_pty=True)
     full = out + err
     if "Chip is ESP8266" in full:
         return "esp8266"
@@ -113,81 +175,75 @@ def detect_chip(client, port, expected_chip):
         return "esp32"
     return None
 
-def after_build(source, target, env):
+
+def after_build(source, target, env) -> None:
+    """
+    Akcje wykonywane po kompilacji PlatformIO.
+    """
     if os.environ.get("GITHUB_ACTIONS"):
-        print("CI detected – skip post-build.")
+        logger.info("CI detected – skip post-build.")
         return
 
-    print("Proces po kompilacji...")
-    board = env['PIOENV']
-    print("Płytka:", board)
-    exp_token = None
-    if "esp01" in board.lower():
-        exp_chip, exp_token = "esp8266", "esp01"
-    elif "nodemcuv2" in board.lower():
-        exp_chip, exp_token = "esp8266", "esp8266"
-    elif "esp32" in board.lower():
-        exp_chip, exp_token = "esp32", None
-    else:
-        exp_chip, exp_token = None, None
+    logger.info("Proces po kompilacji...")
+    board: str = env['PIOENV']
+    logger.info("Płytka: %s", board)
 
-    fw_src = os.path.abspath(env.subst("$BUILD_DIR/firmware.bin"))
-    fw_dst = f"C:/Compiled/Firmware/firmware_{board}.bin"
-    print("Firmware lokalnie:", fw_src)
-    print("Firmware zdalnie:", fw_dst)
+    exp_chip, exp_token = next(
+        (v for k, v in BOARD_MAP.items() if k in board.lower()),
+        (None, None)
+    )
+
+    fw_src = Path(env.subst("$BUILD_DIR")) / "firmware.bin"
+    fw_dst = Path("C:/Compiled/Firmware") / f"firmware_{board}.bin"
+    logger.info("Firmware lokalnie: %s", fw_src)
+    logger.info("Firmware zdalnie: %s", fw_dst)
 
     ip = get_client_ip()
     if not ip:
-        print("Brak IP – pomijam upload i flash.")
+        logger.warning("Brak IP – pomijam upload i flash.")
         return
 
     try:
-        client = ssh_connect(ip)
+        with ssh_connect(ip) as client:
+            mkdir_remote(client, str(fw_dst.parent))
+            sftp_upload(client, fw_src, str(fw_dst))
+
+            ports = list_com_ports(client)
+            if not ports:
+                logger.error("Nie znaleziono portów COM.")
+                return
+
+            chosen: Optional[Tuple[str, str]] = None
+            for p in ports:
+                chip = detect_chip(client, p, exp_chip)
+                if not chip or (exp_chip and chip != exp_chip):
+                    continue
+                logger.info("🔍 Port %s → %s", p, chip)
+                chosen = (p, chip)
+                break
+
+            if not chosen:
+                logger.error("Nie znaleziono oczekiwanego urządzenia.")
+                return
+
+            port, chip = chosen
+            logger.info("Rozpoczynam kasowanie flash (erase_flash)...")
+            erc = run_cmd_live(client, f'python -m esptool --chip {chip} --port {port} --baud 921600 erase_flash')
+            logger.info("ERASE zakończone z kodem: %d", erc)
+            if erc != 0:
+                logger.warning("Błąd erase_flash – przerwanie.")
+                return
+
+            logger.info("Rozpoczynam flashowanie (write_flash)...")
+            frc = run_cmd_live(client, f'python -m esptool --chip {chip} --port {port} --baud 921600 write_flash 0x00000 "{fw_dst}"')
+            logger.info("FLASH zakończone z kodem: %d", frc)
+            if frc == 0:
+                logger.info("✅ Flashowanie zakończone sukcesem!")
+            else:
+                logger.error("⚠️ Flashowanie nie powiodło się.")
+
     except (socket.timeout, paramiko.SSHException) as e:
-        print("❌ Błąd SSH:", e)
-        return
+        logger.error("❌ Błąd SSH: %s", e)
 
-    mkdir_remote(client, "C:/Compiled/Firmware")
-    sftp_upload(client, fw_src, fw_dst)
-    ports = list_com_ports(client)
-    if not ports:
-        print("❌ Nie znaleziono portów COM.")
-        client.close()
-        return
-
-    chosen = None
-    for p in ports:
-        chip = detect_chip(client, p, exp_chip)
-        if not chip:
-            continue
-        if exp_chip and chip != exp_chip:
-            continue
-        print(f"🔍 Port {p} → {chip}")
-        chosen = (p, chip)
-        break
-
-    if not chosen:
-        print("❌ Nie znaleziono oczekiwanego urządzenia.")
-        client.close()
-        return
-    port, chip = chosen
-
-    print("Rozpoczynam kasowanie flash (erase_flash)...")
-    erc = run_cmd_live(client, f'python -m esptool --chip {chip} --port {port} --baud 921600 erase_flash')
-    print(f"ERASE zakończone z kodem: {erc}")
-    if erc != 0:
-        print("⚠️ Błąd erase_flash – przerwanie.")
-        client.close()
-        return
-
-    print("Rozpoczynam flashowanie (write_flash)...")
-    frc = run_cmd_live(client, f'python -m esptool --chip {chip} --port {port} --baud 921600 write_flash 0x00000 "{fw_dst}"')
-    print(f"FLASH zakończone z kodem: {frc}")
-    if frc == 0:
-        print("✅ Flashowanie zakończone sukcesem!")
-    else:
-        print("⚠️ Flashowanie nie powiodło się.")
-
-    client.close()
-
+# Rejestracja akcji po buildzie w PlatformIO
 env.AddPostAction("buildprog", after_build)
