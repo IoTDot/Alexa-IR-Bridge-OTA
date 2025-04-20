@@ -40,20 +40,17 @@ def get_client_ip() -> Optional[str]:
     Zwraca None, jeśli nie uda się wykryć.
     """
     logger.debug("Sprawdzam zmienne SSH_CONNECTION, SSH_CLIENT oraz CLIENT_IP...")
-    # najpierw próbujemy odczytać dane z automatycznie ustawianych zmiennych SSH
     ssh_conn = os.environ.get("SSH_CONNECTION") or os.environ.get("SSH_CLIENT")
     if ssh_conn:
         ip = ssh_conn.split()[0]
         logger.info("Wykryty adres IP klienta: %s", ip)
         return ip
 
-    # opcjonalnie możemy wymusić IP poprzez CLIENT_IP
     client_ip = os.environ.get("CLIENT_IP")
     if client_ip:
         logger.info("Używam ręcznie ustawionego CLIENT_IP: %s", client_ip)
         return client_ip
 
-    # jeśli nic nie działa, informujemy i zwracamy None
     logger.warning("Nie udało się wykryć IP klienta. Upload tylko do pliku.")
     return None
 
@@ -61,16 +58,11 @@ def get_client_ip() -> Optional[str]:
 # Funkcja nawiązująca połączenie SSH
 # -------------------------------------------------------------
 def ssh_connect(ip: str, timeout: int = 5) -> paramiko.SSHClient:
-    """
-    Nawiązuje bezpieczne połączenie SSH na domyślnym porcie 22,
-    używając agenta SSH i weryfikując hosty z known_hosts.
-    """
-    user = os.environ.get("USER") or getpass.getuser()  # pobieramy nazwę użytkownika
+    user = os.environ.get("USER") or getpass.getuser()
     client = paramiko.SSHClient()
-    client.load_system_host_keys()                      # wczytanie known_hosts
-    client.set_missing_host_key_policy(paramiko.RejectPolicy())  # odrzucanie nowych
+    client.load_system_host_keys()
+    client.set_missing_host_key_policy(paramiko.RejectPolicy())
     logger.info("Łączę z %s@%s przez SSH (timeout %ss)...", user, ip, timeout)
-    # połączenie z hostem
     client.connect(
         hostname=ip,
         username=user,
@@ -81,7 +73,7 @@ def ssh_connect(ip: str, timeout: int = 5) -> paramiko.SSHClient:
     return client
 
 # -------------------------------------------------------------
-# Wykonanie pojedynczego polecenia SSH (blokująco)
+# Wykonanie pojedynczego polecenia SSH
 # -------------------------------------------------------------
 def run_cmd(
     client: paramiko.SSHClient,
@@ -89,30 +81,20 @@ def run_cmd(
     timeout: int = 10,
     get_pty: bool = False,
 ) -> Tuple[int, str, str]:
-    """
-    Wykonuje zdalne polecenie, zwracając kod wyjścia, stdout i stderr.
-    """
     stdin, stdout, stderr = client.exec_command(cmd, timeout=timeout, get_pty=get_pty)
-    out = stdout.read().decode(errors="replace")  # odczyt i dekodowanie
+    out = stdout.read().decode(errors="replace")
     err = stderr.read().decode(errors="replace")
-    rc = stdout.channel.recv_exit_status()         # kod wyjścia
+    rc = stdout.channel.recv_exit_status()
     return rc, out, err
 
 # -------------------------------------------------------------
 # Wykonanie polecenia SSH i wyświetlanie outputu na żywo
 # -------------------------------------------------------------
-# -------------------------------------------------------------
-# Wykonanie polecenia SSH i wyświetlanie outputu na żywo (FIXED)
-# -------------------------------------------------------------
 def run_cmd_live(client: paramiko.SSHClient, cmd: str) -> int:
-    """
-    Uruchamia komendę i przekierowuje stdout/stderr w czasie rzeczywistym.
-    Z poprawionym odczytem końcowych danych i resetem RTS.
-    """
     transport = client.get_transport()
     channel = transport.open_session()
     channel.exec_command(cmd)
-    channel.settimeout(2)  # Zwiększony timeout dla ostatnich danych
+    channel.settimeout(2)
 
     stdout_buffer = []
     stderr_buffer = []
@@ -137,23 +119,17 @@ def run_cmd_live(client: paramiko.SSHClient, cmd: str) -> int:
         return list(data)
 
     try:
-        # Główna pętla odczytu
         while not channel.exit_status_ready():
-            # Odczyt stdout
             if channel.recv_ready():
                 part = channel.recv(4096).decode(errors="replace")
                 stdout_buffer = process_buffer(stdout_buffer + list(part))
-
-            # Odczyt stderr
             if channel.recv_stderr_ready():
                 part = channel.recv_stderr(4096).decode(errors="replace")
                 stderr_buffer = process_buffer(stderr_buffer + list(part), is_stderr=True)
-
             time.sleep(0.05)
 
-        # Faza końcowa - czytaj dopóki są dane
         final_reads = 0
-        while final_reads < 3:  # Dodatkowe próby na resztki danych
+        while final_reads < 3:
             if channel.recv_ready():
                 part = channel.recv(4096).decode(errors="replace")
                 stdout_buffer = process_buffer(stdout_buffer + list(part))
@@ -166,7 +142,6 @@ def run_cmd_live(client: paramiko.SSHClient, cmd: str) -> int:
                 final_reads += 1
                 time.sleep(0.1)
 
-        # Wymuś wypisanie ostatnich niekompletnych linii
         if stdout_buffer:
             print("".join(stdout_buffer), flush=True)
         if stderr_buffer:
@@ -175,7 +150,6 @@ def run_cmd_live(client: paramiko.SSHClient, cmd: str) -> int:
     except socket.timeout:
         pass
     finally:
-        # Dodatkowe zabezpieczenie - zamknięcie kanału
         if not channel.closed:
             channel.close()
 
@@ -185,21 +159,18 @@ def run_cmd_live(client: paramiko.SSHClient, cmd: str) -> int:
 # Tworzenie katalogu na zdalnym Windows-ie
 # -------------------------------------------------------------
 def mkdir_remote(client: paramiko.SSHClient, path: str) -> None:
-    """Jeśli katalog nie istnieje, tworzy go poleceniem Windows CMD."""
     cmd = f'if not exist "{path}" mkdir "{path}"'
     rc, out, err = run_cmd(client, cmd)
     logger.debug("mkdir rc=%d out=%s err=%s", rc, out.strip(), err.strip())
 
-# -------------------------------------------------------------
-# Upload pliku przez SFTP
+# -------------------------------------------------------------\# Upload pliku przez SFTP
 # -------------------------------------------------------------
 def sftp_upload(client: paramiko.SSHClient, local: Path, remote: str) -> None:
-    """Wysyła plik lokalny do zdalnego po uprzednim utworzeniu katalogu."""
     logger.info("Kopiuję plik %s → %s", local, remote)
     with client.open_sftp() as sftp:
         remote_dir = os.path.dirname(remote)
         try:
-            sftp.stat(remote_dir)  # sprawdzenie istnienia katalogu
+            sftp.stat(remote_dir)
         except IOError:
             logger.info("Katalog nie istnieje, tworzę: %s", remote_dir)
             mkdir_remote(client, remote_dir)
@@ -210,7 +181,6 @@ def sftp_upload(client: paramiko.SSHClient, local: Path, remote: str) -> None:
 # Lista portów COM na zdalnej maszynie
 # -------------------------------------------------------------
 def list_com_ports(client: paramiko.SSHClient) -> List[str]:
-    """Używa biblioteki pyserial do wypisania dostępnych portów COM."""
     code = (
         "import serial.tools.list_ports;"
         "print('\\n'.join(p.device for p in serial.tools.list_ports.comports()))"
@@ -218,18 +188,15 @@ def list_com_ports(client: paramiko.SSHClient) -> List[str]:
     cmd = f'python -c "{code}"'
     rc, out, err = run_cmd(client, cmd)
     logger.debug("LIST_COM rc=%d out=%s err=%s", rc, out.strip(), err.strip())
-    # zwraca tylko linie z urządzeniami, jeśli komenda zakończyła się sukcesem
     return [l.strip() for l in out.splitlines() if rc == 0 and l.strip()]
 
-# -------------------------------------------------------------
-# Wykrywanie typu układu (ESP8266/ESP32)
+# -------------------------------------------------------------\# Wykrywanie typu układu (ESP8266/ESP32)
 # -------------------------------------------------------------
 def detect_chip(
     client: paramiko.SSHClient,
     port: str,
     expected_chip: Optional[str],
 ) -> Optional[str]:
-    """Wywołuje esptool i analizuje odpowiedź, zwracając wykryty chip."""
     chip_arg = f"--chip {expected_chip}" if expected_chip else ""
     cmd = f'python -m esptool {chip_arg} --port {port} --baud 115200 chip_id'
     rc, out, err = run_cmd(client, cmd, get_pty=True)
@@ -241,10 +208,38 @@ def detect_chip(
     return None
 
 # -------------------------------------------------------------
+# Dodatkowa weryfikacja tokena przez esptool flash_id
+# -------------------------------------------------------------
+def check_flash_id(
+    client: paramiko.SSHClient,
+    port: str,
+    expected_token: Optional[str],
+) -> bool:
+    """
+    Wysyła 'esptool --port {port} flash_id' i sprawdza,
+    czy stdout zawiera expected_token (ignorując wielkość liter).
+    Zwraca True tylko, jeśli token pasuje lub nie podano expected_token.
+    """
+    if not expected_token:
+        return True
+
+    cmd = f'python -m esptool --port {port} flash_id'
+    rc, out, err = run_cmd(client, cmd, get_pty=True)
+    full = (out + err).lower()
+    if expected_token.lower() in full:
+        logger.info("🔑 Token '%s' znaleziony w flash_id na %s", expected_token, port)
+        return True
+    else:
+        logger.warning(
+            "❌ Token '%s' nie znaleziony w flash_id na %s. Odrzucam port.",
+            expected_token, port
+        )
+        return False
+
+# -------------------------------------------------------------
 # Główna funkcja wywoływana po buildzie PlatformIO
 # -------------------------------------------------------------
 def after_build(source, target, env) -> None:
-    # pomijamy w CI
     if os.environ.get("GITHUB_ACTIONS"):
         logger.info("CI detected – skip post-build.")
         return
@@ -253,43 +248,43 @@ def after_build(source, target, env) -> None:
     board: str = env['PIOENV']
     logger.info("Płytka: %s", board)
 
-    # dobór oczekiwanego chipa na podstawie nazwy płytki
     exp_chip, exp_token = next(
         (v for k, v in BOARD_MAP.items() if k in board.lower()),
         (None, None)
     )
 
-    # ścieżki do pliku firmware
     fw_src = Path(env.subst("$BUILD_DIR")) / "firmware.bin"
     fw_dst = Path("C:/Compiled/Firmware") / f"firmware_{board}.bin"
     logger.info("Firmware lokalnie: %s", fw_src)
     logger.info("Firmware zdalnie: %s", fw_dst)
 
-    # wykrycie IP i połączenie SSH
     ip = get_client_ip()
     if not ip:
         logger.warning("Brak IP – pomijam upload i flash.")
         return
 
     try:
-        # automatyczne zamknięcie połączenia dzięki context managerowi
         with ssh_connect(ip) as client:
-            # upload pliku
             mkdir_remote(client, str(fw_dst.parent))
             sftp_upload(client, fw_src, str(fw_dst))
 
-            # wykrycie portów COM
             ports = list_com_ports(client)
             if not ports:
                 logger.error("Nie znaleziono portów COM.")
                 return
 
-            # wybór pierwszego pasującego portu
+            # wybór pierwszego pasującego portu (z dodatkowym sprawdzeniem tokena)
             chosen: Optional[Tuple[str, str]] = None
             for p in ports:
                 chip = detect_chip(client, p, exp_chip)
                 if not chip or (exp_chip and chip != exp_chip):
                     continue
+
+                # DODATKOWE: tylko dla ESP8266 sprawdzamy flash_id → token
+                if chip == "esp8266" and exp_token:
+                    if not check_flash_id(client, p, exp_token):
+                        continue
+
                 logger.info("🔍 Port %s → %s", p, chip)
                 chosen = (p, chip)
                 break
@@ -299,7 +294,6 @@ def after_build(source, target, env) -> None:
                 return
 
             port, chip = chosen
-            # erase_flash
             logger.info("Rozpoczynam kasowanie flash (erase_flash)...")
             erc = run_cmd_live(client, f'python -m esptool --chip {chip} --port {port} --baud 921600 erase_flash')
             logger.info("ERASE zakończone z kodem: %d", erc)
@@ -307,9 +301,8 @@ def after_build(source, target, env) -> None:
                 logger.warning("Błąd erase_flash – przerwanie.")
                 return
 
-            # write_flash
             logger.info("Rozpoczynam flashowanie (write_flash)...")
-            frc = run_cmd_live(client, f'python -m esptool --chip {chip} --port {port} --baud 921600 write_flash 0x00000 "{fw_dst}"')
+            frc = run_cmd_live(client, f'python -m esptool --chip {chip} --port {port} --baud 921600 write_flash 0x00000 \"{fw_dst}\"')
             logger.info("FLASH zakończone z kodem: %d", frc)
             if frc == 0:
                 logger.info("✅ Flashowanie zakończone sukcesem!")
