@@ -61,7 +61,7 @@ def ssh_connect(ip: str, timeout: int = 5) -> paramiko.SSHClient:
     user = os.environ.get("USER") or getpass.getuser()
     client = paramiko.SSHClient()
     client.load_system_host_keys()
-    client.set_missing_host_key_policy(paramiko.RejectPolicy())
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     logger.info("Łączę z %s@%s przez SSH (timeout %ss)...", user, ip, timeout)
     client.connect(
         hostname=ip,
