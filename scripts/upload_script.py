@@ -1,5 +1,6 @@
 # pyright: reportUndefinedVariable=false
 Import("env")
+
 import os             # operacje na systemie plików i zmienne środowiskowe
 import socket         # obsługa wyjątków związanych z siecią
 import sys            # dostęp do stderr
@@ -10,6 +11,14 @@ from pathlib import Path            # wygodna praca ze ścieżkami
 from typing import Optional, Tuple, List  # typowanie zmiennych
 
 import paramiko       # SSH i SFTP
+
+# -------------------------------------------------------------
+# Globalne stałe
+# -------------------------------------------------------------
+# Katalog, do którego kopiowane jest firmware (można nadpisać przez zmienną środowiskową)
+FIRMWARE_OUTPUT_DIR = Path(
+    os.environ.get("FIRMWARE_OUTPUT", "C:/Compiled/Firmware")
+)
 
 # -------------------------------------------------------------
 # Konfiguracja loggera: wyświetlanie czasu, poziomu i wiadomości
@@ -26,9 +35,9 @@ logger = logging.getLogger(__name__)
 # klucz to fragment nazwy środowiska PIOENV
 # -------------------------------------------------------------
 BOARD_MAP = {
-    "esp01":    ("esp8266", "esp01"),
-    "nodemcuv2":("esp8266", "esp8266"),
-    "esp32":    ("esp32",   None),
+    "esp01":     ("esp8266", "esp01"),
+    "nodemcuv2": ("esp8266", "esp8266"),
+    "esp32":     ("esp32",   None),
 }
 
 # -------------------------------------------------------------
@@ -43,12 +52,12 @@ def get_client_ip() -> Optional[str]:
     ssh_conn = os.environ.get("SSH_CONNECTION") or os.environ.get("SSH_CLIENT")
     if ssh_conn:
         ip = ssh_conn.split()[0]
-        logger.info("Wykryty adres IP klienta: %s", ip)
+        logger.info(f"Wykryty adres IP klienta: {ip}")
         return ip
 
     client_ip = os.environ.get("CLIENT_IP")
     if client_ip:
-        logger.info("Używam ręcznie ustawionego CLIENT_IP: %s", client_ip)
+        logger.info(f"Używam ręcznie ustawionego CLIENT_IP: {client_ip}")
         return client_ip
 
     logger.warning("Nie udało się wykryć IP klienta. Upload tylko do pliku.")
@@ -61,8 +70,9 @@ def ssh_connect(ip: str, timeout: int = 5) -> paramiko.SSHClient:
     user = os.environ.get("USER") or getpass.getuser()
     client = paramiko.SSHClient()
     client.load_system_host_keys()
+    # automatyczne dodawanie nieznanych kluczy do known_hosts
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    logger.info("Łączę z %s@%s przez SSH (timeout %ss)...", user, ip, timeout)
+    logger.info(f"Łączę z {user}@{ip} przez SSH (timeout {timeout}s)...")
     client.connect(
         hostname=ip,
         username=user,
@@ -113,9 +123,9 @@ def run_cmd_live(client: paramiko.SSHClient, cmd: str) -> int:
         if lines:
             for line in lines:
                 if is_stderr:
-                    print(line, file=sys.stderr, flush=True)
+                    logger.error(line)
                 else:
-                    print(line, flush=True)
+                    logger.info(line)
         return list(data)
 
     try:
@@ -143,9 +153,9 @@ def run_cmd_live(client: paramiko.SSHClient, cmd: str) -> int:
                 time.sleep(0.1)
 
         if stdout_buffer:
-            print("".join(stdout_buffer), flush=True)
+            logger.info("".join(stdout_buffer))
         if stderr_buffer:
-            print("".join(stderr_buffer), file=sys.stderr, flush=True)
+            logger.error("".join(stderr_buffer))
 
     except socket.timeout:
         pass
@@ -161,18 +171,19 @@ def run_cmd_live(client: paramiko.SSHClient, cmd: str) -> int:
 def mkdir_remote(client: paramiko.SSHClient, path: str) -> None:
     cmd = f'if not exist "{path}" mkdir "{path}"'
     rc, out, err = run_cmd(client, cmd)
-    logger.debug("mkdir rc=%d out=%s err=%s", rc, out.strip(), err.strip())
+    logger.debug(f"mkdir rc={rc} out={out.strip()} err={err.strip()}")
 
-# -------------------------------------------------------------\# Upload pliku przez SFTP
+# -------------------------------------------------------------
+# Upload pliku przez SFTP
 # -------------------------------------------------------------
 def sftp_upload(client: paramiko.SSHClient, local: Path, remote: str) -> None:
-    logger.info("Kopiuję plik %s → %s", local, remote)
+    logger.info(f"Kopiuję plik {local} → {remote}")
     with client.open_sftp() as sftp:
         remote_dir = os.path.dirname(remote)
         try:
             sftp.stat(remote_dir)
         except IOError:
-            logger.info("Katalog nie istnieje, tworzę: %s", remote_dir)
+            logger.info(f"Katalog nie istnieje, tworzę: {remote_dir}")
             mkdir_remote(client, remote_dir)
         sftp.put(str(local), remote)
     logger.info("Kopiowanie zakończone.")
@@ -187,10 +198,11 @@ def list_com_ports(client: paramiko.SSHClient) -> List[str]:
     )
     cmd = f'python -c "{code}"'
     rc, out, err = run_cmd(client, cmd)
-    logger.debug("LIST_COM rc=%d out=%s err=%s", rc, out.strip(), err.strip())
+    logger.debug(f"LIST_COM rc={rc} out={out.strip()} err={err.strip()}")
     return [l.strip() for l in out.splitlines() if rc == 0 and l.strip()]
 
-# -------------------------------------------------------------\# Wykrywanie typu układu (ESP8266/ESP32)
+# -------------------------------------------------------------
+# Wykrywanie typu układu (ESP8266/ESP32)
 # -------------------------------------------------------------
 def detect_chip(
     client: paramiko.SSHClient,
@@ -215,11 +227,6 @@ def check_flash_id(
     port: str,
     expected_token: Optional[str],
 ) -> bool:
-    """
-    Wysyła 'esptool --port {port} flash_id' i sprawdza,
-    czy stdout zawiera expected_token (ignorując wielkość liter).
-    Zwraca True tylko, jeśli token pasuje lub nie podano expected_token.
-    """
     if not expected_token:
         return True
 
@@ -227,12 +234,11 @@ def check_flash_id(
     rc, out, err = run_cmd(client, cmd, get_pty=True)
     full = (out + err).lower()
     if expected_token.lower() in full:
-        logger.info("🔑 Token '%s' znaleziony w flash_id na %s", expected_token, port)
+        logger.info(f"🔑 Token '{expected_token}' znaleziony w flash_id na {port}")
         return True
     else:
         logger.warning(
-            "❌ Token '%s' nie znaleziony w flash_id na %s. Odrzucam port.",
-            expected_token, port
+            f"❌ Token '{expected_token}' nie znaleziony w flash_id na {port}. Odrzucam port."
         )
         return False
 
@@ -246,7 +252,7 @@ def after_build(source, target, env) -> None:
 
     logger.info("Proces po kompilacji...")
     board: str = env['PIOENV']
-    logger.info("Płytka: %s", board)
+    logger.info(f"Płytka: {board}")
 
     exp_chip, exp_token = next(
         (v for k, v in BOARD_MAP.items() if k in board.lower()),
@@ -254,9 +260,9 @@ def after_build(source, target, env) -> None:
     )
 
     fw_src = Path(env.subst("$BUILD_DIR")) / "firmware.bin"
-    fw_dst = Path("C:/Compiled/Firmware") / f"firmware_{board}.bin"
-    logger.info("Firmware lokalnie: %s", fw_src)
-    logger.info("Firmware zdalnie: %s", fw_dst)
+    fw_dst = FIRMWARE_OUTPUT_DIR / f"firmware_{board}.bin"
+    logger.info(f"Firmware lokalnie: {fw_src}")
+    logger.info(f"Firmware zdalnie: {fw_dst}")
 
     ip = get_client_ip()
     if not ip:
@@ -285,7 +291,7 @@ def after_build(source, target, env) -> None:
                     if not check_flash_id(client, p, exp_token):
                         continue
 
-                logger.info("🔍 Port %s → %s", p, chip)
+                logger.info(f"🔍 Port {p} → {chip}")
                 chosen = (p, chip)
                 break
 
@@ -295,22 +301,28 @@ def after_build(source, target, env) -> None:
 
             port, chip = chosen
             logger.info("Rozpoczynam kasowanie flash (erase_flash)...")
-            erc = run_cmd_live(client, f'python -m esptool --chip {chip} --port {port} --baud 921600 erase_flash')
-            logger.info("ERASE zakończone z kodem: %d", erc)
+            erc = run_cmd_live(
+                client,
+                f'python -m esptool --chip {chip} --port {port} --baud 921600 erase_flash'
+            )
+            logger.info(f"ERASE zakończone z kodem: {erc}")
             if erc != 0:
                 logger.warning("Błąd erase_flash – przerwanie.")
                 return
 
             logger.info("Rozpoczynam flashowanie (write_flash)...")
-            frc = run_cmd_live(client, f'python -m esptool --chip {chip} --port {port} --baud 921600 write_flash 0x00000 \"{fw_dst}\"')
-            logger.info("FLASH zakończone z kodem: %d", frc)
+            frc = run_cmd_live(
+                client,
+                f'python -m esptool --chip {chip} --port {port} --baud 921600 write_flash 0x00000 "{fw_dst}"'
+            )
+            logger.info(f"FLASH zakończone z kodem: {frc}")
             if frc == 0:
                 logger.info("✅ Flashowanie zakończone sukcesem!")
             else:
                 logger.error("⚠️ Flashowanie nie powiodło się.")
 
     except (socket.timeout, paramiko.SSHException) as e:
-        logger.error("❌ Błąd SSH: %s", e)
+        logger.error(f"❌ Błąd SSH: {e}")
 
 # -------------------------------------------------------------
 # Rejestracja akcji po buildzie w PlatformIO
