@@ -13,12 +13,14 @@ from typing import Optional, Tuple, List  # typowanie zmiennych
 import paramiko       # SSH i SFTP
 
 # -------------------------------------------------------------
-# Globalne stałe
+# Globalne stałe (można nadpisać przez zmienne środowiskowe)
 # -------------------------------------------------------------
-# Katalog, do którego kopiowane jest firmware (można nadpisać przez zmienną środowiskową)
 FIRMWARE_OUTPUT_DIR = Path(
     os.environ.get("FIRMWARE_OUTPUT", "C:/Compiled/Firmware")
 )
+SSH_TIMEOUT       = int(os.environ.get("SSH_TIMEOUT", "5"))       # domyślny timeout SSH w sekundach
+BAUD_DETECT       = int(os.environ.get("BAUD_DETECT", "115200"))  # prędkość do detect_chip
+BAUD_FLASH        = int(os.environ.get("BAUD_FLASH", "921600"))   # prędkość do erase/write_flash
 
 # -------------------------------------------------------------
 # Konfiguracja loggera: wyświetlanie czasu, poziomu i wiadomości
@@ -60,19 +62,19 @@ def get_client_ip() -> Optional[str]:
         logger.info(f"Używam ręcznie ustawionego CLIENT_IP: {client_ip}")
         return client_ip
 
-    logger.warning("Nie udało się wykryć IP klienta. Upload tylko do pliku.")
+    logger.warning("❌ Nie udało się wykryć IP klienta. ❎ Upload tylko do pliku.")
     return None
 
 # -------------------------------------------------------------
 # Funkcja nawiązująca połączenie SSH
 # -------------------------------------------------------------
-def ssh_connect(ip: str, timeout: int = 5) -> paramiko.SSHClient:
+def ssh_connect(ip: str, timeout: int = SSH_TIMEOUT) -> paramiko.SSHClient:
     user = os.environ.get("USER") or getpass.getuser()
     client = paramiko.SSHClient()
     client.load_system_host_keys()
     # automatyczne dodawanie nieznanych kluczy do known_hosts
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    logger.info(f"Łączę z {user}@{ip} przez SSH (timeout {timeout}s)...")
+    logger.info(f"Łączę z {user}@{ip} przez SSH (timeout {timeout}s)…")
     client.connect(
         hostname=ip,
         username=user,
@@ -177,7 +179,7 @@ def mkdir_remote(client: paramiko.SSHClient, path: str) -> None:
 # Upload pliku przez SFTP
 # -------------------------------------------------------------
 def sftp_upload(client: paramiko.SSHClient, local: Path, remote: str) -> None:
-    logger.info(f"Kopiuję plik {local} → {remote}")
+    logger.info(f"⏳ Kopiuję plik {local} → {remote}")
     with client.open_sftp() as sftp:
         remote_dir = os.path.dirname(remote)
         try:
@@ -186,7 +188,7 @@ def sftp_upload(client: paramiko.SSHClient, local: Path, remote: str) -> None:
             logger.info(f"Katalog nie istnieje, tworzę: {remote_dir}")
             mkdir_remote(client, remote_dir)
         sftp.put(str(local), remote)
-    logger.info("Kopiowanie zakończone.")
+    logger.info("✅ Kopiowanie zakończone.")
 
 # -------------------------------------------------------------
 # Lista portów COM na zdalnej maszynie
@@ -210,7 +212,7 @@ def detect_chip(
     expected_chip: Optional[str],
 ) -> Optional[str]:
     chip_arg = f"--chip {expected_chip}" if expected_chip else ""
-    cmd = f'python -m esptool {chip_arg} --port {port} --baud 115200 chip_id'
+    cmd = f'python -m esptool {chip_arg} --port {port} --baud {BAUD_DETECT} chip_id'
     rc, out, err = run_cmd(client, cmd, get_pty=True)
     full = out + err
     if "Chip is ESP8266" in full:
@@ -266,7 +268,7 @@ def after_build(source, target, env) -> None:
 
     ip = get_client_ip()
     if not ip:
-        logger.warning("Brak IP – pomijam upload i flash.")
+        logger.warning("⛔ Brak IP – pomijam upload i flash.")
         return
 
     try:
@@ -276,7 +278,7 @@ def after_build(source, target, env) -> None:
 
             ports = list_com_ports(client)
             if not ports:
-                logger.error("Nie znaleziono portów COM.")
+                logger.error("⛔ Nie znaleziono portów COM.")
                 return
 
             # wybór pierwszego pasującego portu (z dodatkowym sprawdzeniem tokena)
@@ -286,7 +288,6 @@ def after_build(source, target, env) -> None:
                 if not chip or (exp_chip and chip != exp_chip):
                     continue
 
-                # DODATKOWE: tylko dla ESP8266 sprawdzamy flash_id → token
                 if chip == "esp8266" and exp_token:
                     if not check_flash_id(client, p, exp_token):
                         continue
@@ -296,26 +297,26 @@ def after_build(source, target, env) -> None:
                 break
 
             if not chosen:
-                logger.error("Nie znaleziono oczekiwanego urządzenia.")
+                logger.error("⛔ Nie znaleziono oczekiwanego urządzenia.")
                 return
 
             port, chip = chosen
-            logger.info("Rozpoczynam kasowanie flash (erase_flash)...")
+            logger.info("🔥 Rozpoczynam kasowanie flash (erase_flash)…")
             erc = run_cmd_live(
                 client,
-                f'python -m esptool --chip {chip} --port {port} --baud 921600 erase_flash'
+                f'python -m esptool --chip {chip} --port {port} --baud {BAUD_FLASH} erase_flash'
             )
-            logger.info(f"ERASE zakończone z kodem: {erc}")
+            logger.info(f"💡 ERASE zakończone z kodem: {erc}")
             if erc != 0:
-                logger.warning("Błąd erase_flash – przerwanie.")
+                logger.warning("💥 Błąd erase_flash – przerwanie.")
                 return
 
-            logger.info("Rozpoczynam flashowanie (write_flash)...")
+            logger.info("💾 Rozpoczynam flashowanie (write_flash)…")
             frc = run_cmd_live(
                 client,
-                f'python -m esptool --chip {chip} --port {port} --baud 921600 write_flash 0x00000 "{fw_dst}"'
+                f'python -m esptool --chip {chip} --port {port} --baud {BAUD_FLASH} write_flash 0x00000 "{fw_dst}"'
             )
-            logger.info(f"FLASH zakończone z kodem: {frc}")
+            logger.info(f"💡 FLASH zakończone z kodem: {frc}")
             if frc == 0:
                 logger.info("✅ Flashowanie zakończone sukcesem!")
             else:
