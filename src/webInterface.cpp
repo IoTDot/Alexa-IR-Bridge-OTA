@@ -58,7 +58,7 @@ const char index_html[] PROGMEM = R"rawliteral(
                 </div>
                 <div class="mb-3">
                   <label for="bits" class="form-label">Bits</label>
-                  <input type="number" id="bits" class="form-control" required>
+                  <select id="bits" class="form-select" required></select>
                 </div>
                 <button type="button" class="btn btn-primary w-100" onclick="addDevice()">
                   <i class="bi bi-plus-circle"></i> Add Device
@@ -82,6 +82,24 @@ const char index_html[] PROGMEM = R"rawliteral(
       </div>
     </div>
     <script>
+      // lista dostępnych bitrate'ów
+      const allowedBits = [8, 12, 13, 14, 15, 16, 20, 24, 32, 36, 38];
+
+      // funkcja wypełniająca select#bits odpowiednimi opcjami
+      function populateBits(defaultBits) {
+        const bitsSel = document.getElementById('bits');
+        bitsSel.innerHTML = '';
+        allowedBits.forEach(b => {
+          const opt = document.createElement('option');
+          opt.value = b;
+          opt.text  = `${b}-bit`;
+          bitsSel.add(opt);
+        });
+        if (allowedBits.includes(defaultBits)) {
+          bitsSel.value = defaultBits;
+        }
+      }
+
       let protocolData = [];
 
       function loadProtocols() {
@@ -91,19 +109,23 @@ const char index_html[] PROGMEM = R"rawliteral(
             protocolData = arr;
             const sel = document.getElementById("protocol");
             sel.innerHTML = "";
-            // ustaw handler zmiany, aby przeładować domyślne bits
+
+            // przy zmianie protokołu uaktualniamy listę bits
             sel.onchange = () => {
               const p = sel.value;
               const entry = protocolData.find(x => x.value == p);
-              document.getElementById("bits").value = entry.bits;
+              populateBits(entry.bits);
             };
+
+            // tworzymy opcje protokołów
             arr.forEach(p => {
               const opt = document.createElement("option");
               opt.value = p.value;
               opt.text  = `${p.name} (${p.bits}‑bit)`;
               sel.add(opt);
             });
-            // wywołanie onchange na starcie, dla pierwszego protokołu
+
+            // ustawiamy pierwszy protokół jako domyślny
             sel.onchange();
           });
       }
@@ -151,6 +173,9 @@ const char index_html[] PROGMEM = R"rawliteral(
 </html>
 )rawliteral";
 
+static const uint8_t ALLOWED_BITS[] = {8, 12, 13, 14, 15, 16, 20, 24, 32, 36, 38};
+static const size_t NUM_ALLOWED_BITS = sizeof(ALLOWED_BITS) / sizeof(ALLOWED_BITS[0]);
+
 // Handler – add device
 void handleAdd() {
   if (!webServer->hasArg("name") ||
@@ -165,6 +190,19 @@ void handleAdd() {
   uint32_t code  = strtoul(irStr.c_str(), nullptr, 16);
   uint8_t proto  = webServer->arg("protocol").toInt();
   uint8_t bits   = webServer->arg("bits").toInt();
+
+  bool bitsOk = false;
+  for (size_t i = 0; i < NUM_ALLOWED_BITS; i++) {
+    if (bits == ALLOWED_BITS[i]) {
+      bitsOk = true;
+      break;
+    }
+  }
+  if (!bitsOk) {
+    // odrzucamy nieprawidłową wartość
+    return webServer->send(400, "text/plain", "Invalid bits value");
+    // lub: bits = PROTOCOL_BITS[proto];  // fallback do domyślnej długości
+  }
 
   if (numDevices < MAX_DEVICES) {
     // zamiast devices[numDevices++] = { ... };
