@@ -191,6 +191,14 @@ void handleAdd() {
   uint8_t proto  = webServer->arg("protocol").toInt();
   uint8_t bits   = webServer->arg("bits").toInt();
 
+  //sprawdź, czy nazwa urzadzenia już istnieje
+  for (uint8_t i = 0; i < numDevices; i++) {
+      if (devices[i].deviceName == name) {
+        // Nazwa już zajęta -> błąd 400 i komunikat
+        return webServer->send(400, "text/plain", "Device name already exists");
+      }
+    }
+
   bool bitsOk = false;
   for (size_t i = 0; i < NUM_ALLOWED_BITS; i++) {
     if (bits == ALLOWED_BITS[i]) {
