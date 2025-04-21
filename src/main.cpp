@@ -8,11 +8,9 @@
 #include <LittleFS.h>
 
 #if defined(ESP8266)
-  #include <ESP8266mDNS.h>
   #include <ESP8266WiFi.h>
   #include <ESP8266WebServer.h>
 #else
-  #include <ESPmDNS.h>
   #include <WiFi.h>
   #include <WebServer.h>
 #endif
@@ -114,7 +112,6 @@ void loadDevicesConfig() {
     Serial.printf("Wczytano %d urządzeń z konfiguracji\n", numDevices);
 }
 
-
 void saveDevicesConfig() {
     // Wyciszamy ostrzeżenia o deprecjacji dla StaticJsonDocument
     #pragma GCC diagnostic push
@@ -153,12 +150,10 @@ void saveDevicesConfig() {
     configFile.close();
 }
 
-
 void saveConfigCallback() {
     Serial.println("Should save config");
     shouldSaveConfig = true;
 }
-
 
 // -----------------------
 // Funkcja połączenia WiFi i hotspot
@@ -191,7 +186,6 @@ void setupWiFi() {
     Serial.printf("[WIFI] SSID: %s, IP: %s\n", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
 }
 
-
 // -----------------------
 // Funkcja wysyłająca sygnał IR
 // -----------------------
@@ -203,7 +197,6 @@ void sendIRSignal(const Device &device) {
         default: Serial.println("Nieznany protokół");      break;
     }
 }
-
 
 // -----------------------
 // Inicjalizacja Fauxmo (Alexa emulation)
@@ -230,14 +223,12 @@ void setupFauxmo() {
     });
 }
 
-
 // -----------------------
 // Przetwarzanie IR (placeholder)
 // -----------------------
 void processIR() {
     // Placeholder: przetwarzanie sygnałów IR, jeżeli potrzebne w przyszłości
 }
-
 
 // -----------------------
 // Obsługa przycisku BOOT
@@ -286,20 +277,10 @@ void handleButton() {
 
                     if (WiFi.status() == WL_CONNECTED) {
                         WiFi.hostname("iralexa");
-                        if (MDNS.begin("iralexa")) {
-                            Serial.println("mDNS aktywny jako iralexa.local");
-                            MDNS.addService("http", "tcp", 8080);
-                            #if defined(ESP8266)
-                            MDNS.announce();
-                            #endif
-                        } else {
-                            Serial.println("Nie udało się uruchomić mDNS");
-                        }
                     }
                 } else {
                     Serial.println("Wyłączono tryb konfiguracji");
                     configServer.close();
-                    MDNS.end();
                     fauxmo.enable(true);
                 }
 
@@ -338,11 +319,6 @@ void loop() {
     handleButton();
 
     if (configMode) {
-        // tylko ESP8266 wymaga ręcznego update mDNS
-        #if defined(ESP8266)
-        MDNS.update();
-        #endif
-
         configServer.handleClient();
     } else {
         fauxmo.handle();
