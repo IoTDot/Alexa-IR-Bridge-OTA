@@ -5,7 +5,7 @@ import os
 
 # Ścieżki do folderu źródłowego oraz pliku wynikowego
 source_folder = "src"  # folder z plikami źródłowymi
-output_path = os.path.join("output", "export.txt")  # plik wynikowy
+output_path = os.path.join("export_files_to_txt", "export.txt")  # plik wynikowy
 
 # Utwórz folder output, jeśli nie istnieje
 os.makedirs(os.path.dirname(output_path), exist_ok=True)
