@@ -10,6 +10,7 @@
 struct Device {
   String deviceName;
   uint32_t irCode;
+  uint8_t  bits;
   Protocol protocol;
 };
 

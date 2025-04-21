@@ -56,6 +56,10 @@ const char index_html[] PROGMEM = R"rawliteral(
                   <label for="protocol" class="form-label">Protocol</label>
                   <select id="protocol" class="form-select"></select>
                 </div>
+                <div class="mb-3">
+                  <label for="bits" class="form-label">Bits</label>
+                  <input type="number" id="bits" class="form-control" required>
+                </div>
                 <button type="button" class="btn btn-primary w-100" onclick="addDevice()">
                   <i class="bi bi-plus-circle"></i> Add Device
                 </button>
@@ -78,44 +82,64 @@ const char index_html[] PROGMEM = R"rawliteral(
       </div>
     </div>
     <script>
+      let protocolData = [];
+
       function loadProtocols() {
         fetch("/protocols")
           .then(r => r.json())
           .then(arr => {
+            protocolData = arr;
             const sel = document.getElementById("protocol");
             sel.innerHTML = "";
+            // ustaw handler zmiany, aby przeładować domyślne bits
+            sel.onchange = () => {
+              const p = sel.value;
+              const entry = protocolData.find(x => x.value == p);
+              document.getElementById("bits").value = entry.bits;
+            };
             arr.forEach(p => {
               const opt = document.createElement("option");
               opt.value = p.value;
               opt.text  = `${p.name} (${p.bits}‑bit)`;
               sel.add(opt);
             });
+            // wywołanie onchange na starcie, dla pierwszego protokołu
+            sel.onchange();
           });
       }
+
       function addDevice() {
         const name     = encodeURIComponent(document.getElementById("name").value);
         const ircode   = encodeURIComponent(document.getElementById("ircode").value);
         const protocol = document.getElementById("protocol").value;
-        fetch(`/add?name=${name}&ircode=${ircode}&protocol=${protocol}`)
+        const bits     = document.getElementById("bits").value;
+        fetch(`/add?name=${name}&ircode=${ircode}&protocol=${protocol}&bits=${bits}`)
           .then(_ => loadDevices());
       }
+
       function loadDevices() {
         fetch("/list")
           .then(r => r.text())
-          .then(html => { document.getElementById("deviceList").innerHTML = html; });
+          .then(html => {
+            document.getElementById("deviceList").innerHTML = html;
+          });
       }
+
       function removeDevice(idx) {
         fetch(`/remove?index=${idx}`)
           .then(_ => loadDevices());
       }
+
       function saveConfig() {
         fetch("/save");
         alert("Configuration saved.");
       }
+
       function restartDevice() {
         fetch("/restart");
         alert("Restarting ESP...");
       }
+
       window.onload = () => {
         loadProtocols();
         loadDevices();
@@ -131,16 +155,27 @@ const char index_html[] PROGMEM = R"rawliteral(
 void handleAdd() {
   if (!webServer->hasArg("name") ||
       !webServer->hasArg("ircode") ||
-      !webServer->hasArg("protocol")) {
+      !webServer->hasArg("protocol") ||
+      !webServer->hasArg("bits")) {
     return webServer->send(400, "text/plain", "Missing parameters");
   }
+
   String name    = webServer->arg("name");
   String irStr   = webServer->arg("ircode");
-  uint32_t code  = strtoul(irStr.c_str(), NULL, 16);
+  uint32_t code  = strtoul(irStr.c_str(), nullptr, 16);
   uint8_t proto  = webServer->arg("protocol").toInt();
+  uint8_t bits   = webServer->arg("bits").toInt();
+
   if (numDevices < MAX_DEVICES) {
-    devices[numDevices++] = { name, code, (Protocol)proto };
+    // zamiast devices[numDevices++] = { ... };
+    devices[numDevices].deviceName = name;
+    devices[numDevices].irCode      = code;
+    devices[numDevices].protocol    = (Protocol)proto;
+    devices[numDevices].bits        = bits;
+
     fauxmo.addDevice(name.c_str());
+    numDevices++;
+
     webServer->send(200, "text/plain", "Device added");
   } else {
     webServer->send(200, "text/plain", "Max devices reached");
@@ -173,18 +208,28 @@ void handleRemove() {
 // Handler – list devices
 void handleList() {
   String html;
+
   for (uint8_t i = 0; i < numDevices; i++) {
+    // Kod IR w hex
     String hexCode = String(devices[i].irCode, HEX);
     hexCode.toUpperCase();
+
     html += "<div class='list-group-item d-flex justify-content-between align-items-center'>";
-    html += "<div><strong>" + devices[i].deviceName + "</strong><br>";
+    html += "<div>";
+    html += "<strong>" + devices[i].deviceName + "</strong><br>";
     html += "<small class='text-muted'>IR: 0x" + hexCode + "</small><br>";
     html += "<small class='text-muted'>Protocol: "
-           + String(PROTOCOL_NAMES[devices[i].protocol]) + "</small></div>";
-    html += "<button class='btn btn-danger btn-sm' onclick='removeDevice(" + String(i) + ")'>"
-           "<i class='bi bi-trash'></i></button>";
+           + String(PROTOCOL_NAMES[devices[i].protocol]) + "</small><br>";
+    // Tutaj wyświetlamy bits:
+    html += "<small class='text-muted'>Bits: "
+           + String(devices[i].bits) + "</small>";
+    html += "</div>";
+
+    html += "<button class='btn btn-danger btn-sm' onclick='removeDevice(" 
+         + String(i) + ")'><i class='bi bi-trash'></i></button>";
     html += "</div>";
   }
+
   webServer->send(200, "text/html", html);
 }
 
