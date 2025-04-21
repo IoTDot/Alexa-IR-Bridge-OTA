@@ -1,4 +1,3 @@
-// main.cpp - zaktualizowana wersja
 #include <Arduino.h>
 #include "fauxmoESP.h"
 #include <IRremoteESP8266.h>

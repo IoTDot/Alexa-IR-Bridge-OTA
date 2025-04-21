@@ -1,4 +1,3 @@
-//this is webInterface.h
 #ifndef WEBINTERFACE_H
 #define WEBINTERFACE_H
 
