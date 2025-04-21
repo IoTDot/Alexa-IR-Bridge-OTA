@@ -1,8 +1,8 @@
-//this is webinteface.h
 #ifndef WEBINTERFACE_H
 #define WEBINTERFACE_H
 
 #include "DeviceConfig.h"
+#include <Arduino.h>
 
 #if defined(ESP8266)
   #include <ESP8266WebServer.h>
@@ -12,8 +12,11 @@
   typedef WebServer WebServerType;
 #endif
 
-// Deklaracja funkcji interfejsu WWW
+// Initialize and tear down the web interface
 void setupWebInterface(WebServerType &server);
 void stopWebInterface(WebServerType &server);
+
+// Handler to reboot the ESP via the web interface
+void handleRestart();
 
 #endif // WEBINTERFACE_H
