@@ -6,18 +6,18 @@
 #include "Protocols.h"
 
 // Definicja struktury urządzenia
-struct Device {
-  String deviceName;
-  uint32_t irCode;
-  uint8_t  bits;
-  Protocol protocol;
-};
+typedef struct {
+  String    deviceName;
+  uint32_t  irCode;
+  uint8_t   bits;
+  uint8_t   protocol;      // indeks w PROTOCOLS[]
+} Device;
 
 #define MAX_DEVICES 10
 
 // Zmienne globalne – lista urządzeń oraz liczba dodanych urządzeń
-extern Device devices[MAX_DEVICES];
-extern uint8_t numDevices;
+extern Device   devices[MAX_DEVICES];
+extern uint8_t  numDevices;
 
 // Deklaracja instancji fauxmo
 extern fauxmoESP fauxmo;

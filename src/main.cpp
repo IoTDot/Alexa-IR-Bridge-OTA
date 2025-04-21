@@ -17,10 +17,10 @@
 
 #include "DeviceConfig.h"
 #include "webInterface.h"
+#include "Protocols.h"
 
 #define IRLED_PIN 4
-const uint16_t IrLed = IRLED_PIN;
-IRsend irsend(IrLed);
+IRsend irsend(IRLED_PIN);
 
 #define CONNECTED_LED 2
 #define BOOT_BUTTON_PIN 0
@@ -34,13 +34,9 @@ Ticker irTicker;
 
 #if defined(ESP8266)
 ESP8266WebServer server(80);
-#else
-WebServer server(80);
-#endif
-
-#if defined(ESP8266)
 ESP8266WebServer configServer(8080);
 #else
+WebServer server(80);
 WebServer configServer(8080);
 #endif
 
@@ -71,7 +67,7 @@ void loadDevicesConfig() {
     numDevices = 0;
     return;
   }
-  JsonArray arr = doc["devices"].as<JsonArray>();
+  JsonArray arr = doc.as<JsonArray>();
   numDevices = 0;
   for (JsonObject obj : arr) {
     if (numDevices >= MAX_DEVICES) break;
@@ -79,11 +75,12 @@ void loadDevicesConfig() {
     const char* irStr = obj["ircode"];
     devices[numDevices].irCode = strtoul(irStr, nullptr, 16);
     uint8_t p = obj["protocol"].as<uint8_t>();
-    devices[numDevices].protocol = static_cast<Protocol>(p);
-    if (obj["bits"].is<uint8_t>()) {
+    devices[numDevices].protocol = p;
+    if (!obj["bits"].isNull()) { // Or alternatively: if (obj["bits"])
       devices[numDevices].bits = obj["bits"].as<uint8_t>();
     } else {
-      devices[numDevices].bits = PROTOCOL_BITS[p];
+      // Key "bits" doesn't exist or is null, use default
+      devices[numDevices].bits = PROTOCOLS[p].bits;
     }
     numDevices++;
   }
@@ -94,13 +91,12 @@ void saveDevicesConfig() {
   JsonDocument doc;
   JsonArray arr = doc.to<JsonArray>();
   for (uint8_t i = 0; i < numDevices; i++) {
-    // Użycie add<JsonObject> zamiast przestarzałego add()
     JsonObject obj = arr.add<JsonObject>();
     obj["name"]     = devices[i].deviceName;
     char buf[9];
     snprintf(buf, sizeof(buf), "%08X", devices[i].irCode);
     obj["ircode"]   = buf;
-    obj["protocol"] = static_cast<uint8_t>(devices[i].protocol);
+    obj["protocol"] = devices[i].protocol;
     obj["bits"]     = devices[i].bits;
   }
   File configFile = LittleFS.open(CONFIG_FILE, "w");
@@ -142,25 +138,32 @@ void setupWiFi() {
   Serial.printf("[WIFI] SSID: %s, IP: %s\n", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
 }
 
-void sendIRSignal(const Device &device) {
-  switch (static_cast<uint8_t>(device.protocol)) {
-    case SAMSUNG:  irsend.sendSAMSUNG(device.irCode, device.bits);   break;
-    case EPSON:    irsend.sendEpson(  device.irCode, device.bits);   break;
-    case SYMPHONY: irsend.sendSymphony(device.irCode, device.bits);  break;
-    default: Serial.println("Nieznany protokół"); break;
+void sendIRSignal(const Device &dev) {
+  if (dev.protocol < PROTOCOL_COUNT) {
+    const auto &p = PROTOCOLS[dev.protocol];
+    p.send(dev.irCode, dev.bits);
+  } else {
+    Serial.println("Nieznany protokół");
   }
 }
 
 void setupFauxmo() {
+  Serial.println("[fauxmo] setupFauxmo() start");
   fauxmo.createServer(true);
+  Serial.println("[fauxmo] createServer(true) done");
   fauxmo.setPort(80);
+  Serial.printf("[fauxmo] setPort(%d)\n", 80);
   fauxmo.enable(true);
+  Serial.println("[fauxmo] enable(true)");
   for (uint8_t i = 0; i < numDevices; i++) {
     fauxmo.addDevice(devices[i].deviceName.c_str());
+    Serial.printf("[fauxmo] addDevice(%s)\n", devices[i].deviceName.c_str());
   }
-  fauxmo.onSetState([](unsigned char device_id, const char* device_name, bool state, unsigned char value) {
-    if (device_id < numDevices) sendIRSignal(devices[device_id]);
+  fauxmo.onSetState([](unsigned char id, const char* name, bool state, unsigned char val) {
+    Serial.printf("[fauxmo] onSetState: id=%d name=%s state=%d\n", id, name, state);
+    if (id < numDevices) sendIRSignal(devices[id]);
   });
+  Serial.println("[fauxmo] setupFauxmo() end");
 }
 
 void processIR() {}

@@ -1,28 +1,21 @@
-#ifndef PROTOCOLS_H
-#define PROTOCOLS_H
-
+#pragma once
 #include <cstdint>
 
-/// Unikalne nazwy, żeby nie kolidowały z makrami
-enum Protocol : uint8_t {
-  PROTO_SAMSUNG = 0,
-  PROTO_EPSON   = 1,
-  PROTO_SYMPHONY= 2,
+// Typ funkcji wysyłającej sygnał IR:
+using IRSendFunc = void(*)(uint32_t code, uint8_t bits);
 
-  PROTOCOL_COUNT
+// Struktura opisu protokołu
+struct ProtocolInfo {
+  const char*   name;
+  uint8_t       bits;
+  IRSendFunc    send;
 };
 
-/// Tablice z nazwami i długościami bitów
-static constexpr const char* PROTOCOL_NAMES[PROTOCOL_COUNT] = {
-  "SAMSUNG",
-  "EPSON",
-  "SYMPHONY"
-};
+// Rejestr protokołów i jego rozmiar
+extern const ProtocolInfo PROTOCOLS[];
+extern const uint8_t         PROTOCOL_COUNT;
 
-static constexpr uint8_t PROTOCOL_BITS[PROTOCOL_COUNT] = {
-  32,   // SAMSUNG
-  32,   // EPSON
-  12    // SYMPHONY
+const uint16_t ALLOWED_BITS[] = {
+  12, 13, 15, 16, 24, 28, 32, 36, 48
 };
-
-#endif // PROTOCOLS_H
+const uint8_t ALLOWED_BITS_COUNT = sizeof(ALLOWED_BITS) / sizeof(uint16_t);
