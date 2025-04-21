@@ -131,12 +131,50 @@ const char index_html[] PROGMEM = R"rawliteral(
       }
 
       function addDevice() {
-        const name     = encodeURIComponent(document.getElementById("name").value);
-        const ircode   = encodeURIComponent(document.getElementById("ircode").value);
-        const protocol = document.getElementById("protocol").value;
-        const bits     = document.getElementById("bits").value;
+        const nameInput = document.getElementById("name");
+        const ircodeInput = document.getElementById("ircode");
+        const protocolSel = document.getElementById("protocol");
+        const bitsSel = document.getElementById("bits");
+
+        const name     = encodeURIComponent(nameInput.value.trim()); // Trim whitespace
+        const ircode   = encodeURIComponent(ircodeInput.value.trim());
+        const protocol = protocolSel.value;
+        const bits     = bitsSel.value;
+
+        // Basic client-side validation (optional but good practice)
+        if (!nameInput.value.trim() || !ircodeInput.value.trim()) {
+            alert("Device Name and IR Code cannot be empty.");
+            return;
+        }
+        // A simple hex format check could be added here for ircode too
+
         fetch(`/add?name=${name}&ircode=${ircode}&protocol=${protocol}&bits=${bits}`)
-          .then(_ => loadDevices());
+          .then(response => {
+            // Check if the response status code indicates success (2xx)
+            if (response.ok) {
+              // If successful, clear the form (optional) and reload the list
+              nameInput.value = '';
+              ircodeInput.value = '';
+              // protocolSel.selectedIndex = 0; // Optionally reset protocol/bits too
+              // bitsSel.selectedIndex = 0;
+              // sel.onchange(); // Re-trigger if resetting protocol
+              loadDevices();
+              // Optionally show a temporary success message instead of alert
+              // console.log("Device added successfully");
+            } else {
+              // If not successful (e.g., 400 Bad Request), get the error text from the server
+              return response.text().then(errorMessage => {
+                // Throw an error to be caught by the .catch block
+                throw new Error(errorMessage || `Server responded with status: ${response.status}`);
+              });
+            }
+          })
+          .catch(error => {
+            // Catch network errors or errors thrown from the .then block
+            console.error('Error adding device:', error);
+            // Display the error message received from the server (or a generic one)
+            alert(`Error adding device: ${error.message}`);
+          });
       }
 
       function loadDevices() {
