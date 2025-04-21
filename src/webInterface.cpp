@@ -1,19 +1,15 @@
+//this is webInterface.cpp
 #include "webInterface.h"
+#include "DeviceConfig.h"
+#include "Protocols.h"
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <LittleFS.h>
 
-// static pointer to whichever WebServerType you have
+// static pointer to the active server
 static WebServerType* webServer = nullptr;
 
-// Protocol names for display
-static const char* PROTOCOL_NAMES[] = {
-  "SAMSUNG",
-  "EPSON",
-  "SYMPHONY"
-};
-
-// English HTML UI, with separate Save and Restart buttons
+// HTML interface stored in flash, with dynamic protocol dropdown
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html>
@@ -27,12 +23,15 @@ const char index_html[] PROGMEM = R"rawliteral(
       .custom-card { background-color: #1a1a1a; border-radius: 15px;
                      padding: 20px; margin-bottom: 20px; }
       .form-control { background-color: #333; color: #fff; border: 1px solid #444; }
-      .form-control:focus { background-color: #444; color: #ffffff !important; border-color: #666; box-shadow: none; }
+      .form-control:focus { background-color: #444; color: #ffffff !important;
+                             border-color: #666; box-shadow: none; }
+      .form-select { background-color: #333; color: #fff; }
+      .form-select:focus { background-color: #444; color: #ffffff !important;
+                            border-color: #666; box-shadow: none; }
       .btn-primary { background-color: #0069d9; border-color: #0062cc; }
-      .btn-danger  { background-color: #dc3545; border-color: #dc3545; }
       .btn-success { background-color: #28a745; border-color: #28a745; }
+      .btn-danger  { background-color: #dc3545; border-color: #dc3545; }
       .btn:focus, .btn:active { outline: none !important; box-shadow: none !important; }
-      .btn:focus-visible { outline: 2px solid #ffffff; outline-offset: 2px;}
       .list-group-item { background-color: #222; color: #fff; border: 1px solid #333; }
     </style>
   </head>
@@ -55,11 +54,7 @@ const char index_html[] PROGMEM = R"rawliteral(
                 </div>
                 <div class="mb-3">
                   <label for="protocol" class="form-label">Protocol</label>
-                  <select id="protocol" class="form-select">
-                    <option value="0">SAMSUNG</option>
-                    <option value="1">EPSON</option>
-                    <option value="2">SYMPHONY</option>
-                  </select>
+                  <select id="protocol" class="form-select"></select>
                 </div>
                 <button type="button" class="btn btn-primary w-100" onclick="addDevice()">
                   <i class="bi bi-plus-circle"></i> Add Device
@@ -83,41 +78,56 @@ const char index_html[] PROGMEM = R"rawliteral(
       </div>
     </div>
     <script>
+      function loadProtocols() {
+        fetch("/protocols")
+          .then(r => r.json())
+          .then(arr => {
+            const sel = document.getElementById("protocol");
+            sel.innerHTML = "";
+            arr.forEach(p => {
+              const opt = document.createElement("option");
+              opt.value = p.value;
+              opt.text  = `${p.name} (${p.bits}‑bit)`;
+              sel.add(opt);
+            });
+          });
+      }
       function addDevice() {
         const name     = encodeURIComponent(document.getElementById("name").value);
         const ircode   = encodeURIComponent(document.getElementById("ircode").value);
         const protocol = document.getElementById("protocol").value;
         fetch(`/add?name=${name}&ircode=${ircode}&protocol=${protocol}`)
-          .then(_=>loadDevices());
+          .then(_ => loadDevices());
       }
       function loadDevices() {
         fetch("/list")
-          .then(r=>r.text())
-          .then(html=>{ document.getElementById("deviceList").innerHTML = html; });
+          .then(r => r.text())
+          .then(html => { document.getElementById("deviceList").innerHTML = html; });
       }
       function removeDevice(idx) {
         fetch(`/remove?index=${idx}`)
-          .then(_=>loadDevices());
+          .then(_ => loadDevices());
       }
       function saveConfig() {
-        fetch("/save")
-          .then(_=>alert("Configuration saved."));
+        fetch("/save");
+        alert("Configuration saved.");
       }
       function restartDevice() {
-        fetch("/restart")
-          .then(_=>alert("Restarting ESP..."));
+        fetch("/restart");
+        alert("Restarting ESP...");
       }
-      window.onload = loadDevices;
+      window.onload = () => {
+        loadProtocols();
+        loadDevices();
+      };
     </script>
-    <!-- Bootstrap Icons -->
     <link rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
   </body>
 </html>
 )rawliteral";
 
-// ——— Handlers ———
-
+// Handler – add device
 void handleAdd() {
   if (!webServer->hasArg("name") ||
       !webServer->hasArg("ircode") ||
@@ -129,7 +139,7 @@ void handleAdd() {
   uint32_t code  = strtoul(irStr.c_str(), NULL, 16);
   uint8_t proto  = webServer->arg("protocol").toInt();
   if (numDevices < MAX_DEVICES) {
-    devices[numDevices++] = { name, code, proto };
+    devices[numDevices++] = { name, code, (Protocol)proto };
     fauxmo.addDevice(name.c_str());
     webServer->send(200, "text/plain", "Device added");
   } else {
@@ -137,27 +147,30 @@ void handleAdd() {
   }
 }
 
+// Handler – remove device
 void handleRemove() {
   if (!webServer->hasArg("index"))
     return webServer->send(400, "text/plain", "Missing index");
   uint8_t idx = webServer->arg("index").toInt();
   if (idx >= numDevices)
     return webServer->send(400, "text/plain", "Invalid index");
-  for (uint8_t i = idx; i < numDevices-1; i++)
-    devices[i] = devices[i+1];
+  for (uint8_t i = idx; i < numDevices - 1; i++) {
+    devices[i] = devices[i + 1];
+  }
   numDevices--;
-  // rebuild fauxmo device list
+  // rebuild fauxmo list
   fauxmo.enable(false);
-  for (uint8_t i=0; i<numDevices; i++) {
+  for (uint8_t i = 0; i < numDevices; i++) {
     fauxmo.removeDevice(devices[i].deviceName.c_str());
   }
   fauxmo.enable(true);
-  for (uint8_t i=0; i<numDevices; i++) {
+  for (uint8_t i = 0; i < numDevices; i++) {
     fauxmo.addDevice(devices[i].deviceName.c_str());
   }
   webServer->send(200, "text/plain", "Device removed");
 }
 
+// Handler – list devices
 void handleList() {
   String html;
   for (uint8_t i = 0; i < numDevices; i++) {
@@ -166,40 +179,65 @@ void handleList() {
     html += "<div class='list-group-item d-flex justify-content-between align-items-center'>";
     html += "<div><strong>" + devices[i].deviceName + "</strong><br>";
     html += "<small class='text-muted'>IR: 0x" + hexCode + "</small><br>";
-    html += "<small class='text-muted'>Protocol: " +
-            String(PROTOCOL_NAMES[devices[i].protocol]) + "</small></div>";
-    html += "<button class='btn btn-danger btn-sm' "
-            "onclick='removeDevice(" + String(i) + ")'>"
-            "<i class='bi bi-trash'></i></button>";
+    html += "<small class='text-muted'>Protocol: "
+           + String(PROTOCOL_NAMES[devices[i].protocol]) + "</small></div>";
+    html += "<button class='btn btn-danger btn-sm' onclick='removeDevice(" + String(i) + ")'>"
+           "<i class='bi bi-trash'></i></button>";
     html += "</div>";
   }
   webServer->send(200, "text/html", html);
 }
 
+// Handler – save configuration (writes to LittleFS)
 void handleSave() {
   extern void saveDevicesConfig();
   saveDevicesConfig();
   webServer->send(200, "text/plain", "Configuration saved");
 }
 
+// Handler – restart ESP
 void handleRestart() {
   webServer->send(200, "text/plain", "Rebooting...");
   delay(100);
   ESP.restart();
 }
 
+// Handler – list available protocols as JSON
+void handleProtocols() {
+  // Use the recommended JsonDocument class
+  JsonDocument doc; // Replaced DynamicJsonDocument doc(256);
+
+  // Note: No need for .to<JsonArray>() here, directly assign to JsonArray
+  JsonArray arr = doc.to<JsonArray>(); // Or JsonArray arr = doc.as<JsonArray>(); (both work, .to<> is slightly more modern C++)
+
+
+  for (uint8_t i = 0; i < PROTOCOL_COUNT; i++) {
+    JsonObject obj = arr.add<JsonObject>();
+    obj["value"] = i;
+    obj["name"]  = PROTOCOL_NAMES[i];
+    obj["bits"]  = PROTOCOL_BITS[i];
+  }
+
+  String out;
+  serializeJson(doc, out);
+
+  webServer->send(200, "application/json", out);
+}
+
+// Handler – root page
 void handleRoot() {
   webServer->send_P(200, "text/html", index_html);
 }
 
 void setupWebInterface(WebServerType &server) {
   webServer = &server;
-  webServer->on("/",      handleRoot);
-  webServer->on("/add",   handleAdd);
-  webServer->on("/remove",handleRemove);
-  webServer->on("/list",  handleList);
-  webServer->on("/save",  handleSave);
-  webServer->on("/restart",handleRestart);
+  webServer->on("/",        handleRoot);
+  webServer->on("/add",     handleAdd);
+  webServer->on("/remove",  handleRemove);
+  webServer->on("/list",    handleList);
+  webServer->on("/save",    handleSave);
+  webServer->on("/restart", handleRestart);
+  webServer->on("/protocols",handleProtocols);
   webServer->begin();
   Serial.printf("Web interface: http://%s:8080\n", WiFi.localIP().toString().c_str());
 }

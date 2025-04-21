@@ -4,12 +4,13 @@
 
 #include <Arduino.h>
 #include "fauxmoESP.h"  // Dołączamy pełną definicję fauxmoESP
+#include "Protocols.h"
 
 // Definicja struktury urządzenia
 struct Device {
   String deviceName;
   uint32_t irCode;
-  uint8_t protocol; // 0: SAMSUNG, 1: EPSON, 2: Symphony
+  Protocol protocol;
 };
 
 #define MAX_DEVICES 10
