@@ -207,7 +207,6 @@ void setup() {
   digitalWrite(CONNECTED_LED, LOW);
   irsend.begin();
   setupWiFi();
-  if (!LittleFS.begin()) Serial.println("Błąd montowania LittleFS");
   loadDevicesConfig();
   setupFauxmo();
 }
