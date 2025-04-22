@@ -81,7 +81,7 @@ const char index_html[] PROGMEM = R"rawliteral(
       </div>
     </div>
     <script>
-      const allowedBits = [8, 12, 13, 14, 15, 16, 20, 24, 32, 36, 38];
+      const allowedBits = [8, 12, 13, 14, 15, 16, 20, 24, 28, 32, 36, 38, 48];
       function populateBits(defaultBits) {
         const bitsSel = document.getElementById('bits');
         bitsSel.innerHTML = '';

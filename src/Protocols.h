@@ -16,6 +16,6 @@ extern const ProtocolInfo PROTOCOLS[];
 extern const uint8_t         PROTOCOL_COUNT;
 
 const uint16_t ALLOWED_BITS[] = {
-  12, 13, 15, 16, 24, 28, 32, 36, 48
+  8, 12, 13, 14, 15, 16, 20, 24, 28, 32, 36, 38, 48
 };
 const uint8_t ALLOWED_BITS_COUNT = sizeof(ALLOWED_BITS) / sizeof(uint16_t);
