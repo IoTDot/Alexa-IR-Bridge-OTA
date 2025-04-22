@@ -24,9 +24,6 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4.1.1
 
-      - name: Remove post-build upload script
-        run: rm -f scripts/upload_script.py
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -56,9 +53,6 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4.1.1
 
-      - name: Remove post-build upload script
-        run: rm -f scripts/upload_script.py
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -87,9 +81,6 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4.1.1
-
-      - name: Remove post-build upload script
-        run: rm -f scripts/upload_script.py
 
       - name: Set up Python
         uses: actions/setup-python@v5
