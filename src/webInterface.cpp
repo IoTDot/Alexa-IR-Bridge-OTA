@@ -5,6 +5,8 @@
 #include <ArduinoJson.h>
 #include <LittleFS.h>
 
+extern void saveDevicesConfig();
+
 // statyczny wskaźnik na aktywny serwer
 static WebServerType* webServer = nullptr;
 
