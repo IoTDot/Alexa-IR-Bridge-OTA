@@ -3,7 +3,6 @@
 #include <IRremoteESP8266.h>
 #include <IRsend.h>
 #include <WiFiManager.h>
-#include <Ticker.h>
 #include <ArduinoJson.h>
 #include <LittleFS.h>
 
@@ -30,7 +29,6 @@ uint8_t numDevices = 0;
 
 fauxmoESP fauxmo;
 WiFiManager wifiManager;
-Ticker irTicker;
 
 #if defined(ESP8266)
 ESP8266WebServer configServer(8080);
@@ -164,8 +162,6 @@ void setupFauxmo() {
   Serial.println("[fauxmo] setupFauxmo() end");
 }
 
-void processIR() {}
-
 void handleButton() {
   static uint8_t pressCount = 0;
   static bool lastButtonState = HIGH;
@@ -214,7 +210,6 @@ void setup() {
   if (!LittleFS.begin()) Serial.println("Błąd montowania LittleFS");
   loadDevicesConfig();
   setupFauxmo();
-  irTicker.attach_ms(100, processIR);
 }
 
 void loop() {
