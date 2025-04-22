@@ -1,18 +1,24 @@
+# Workflow name
 name: CI
 
+# Triggers: Run on pushes to release branches or version tags
 on:
- push:
+  push:
     branches:
-      - release/v1.0
+      - 'release/v*' # Matches branches like release/v1.0, release/v2.3.4
     tags:
-      - 'v*'
+      - 'v*'         # Matches tags like v1.0, v2.3.4
 
+# Permissions required by the jobs
 permissions:
- contents: write
- pull-requests: write
+  contents: write      # Needed for creating releases and uploading assets
+  pull-requests: write # Potentially needed by release actions (good practice to include if unsure)
 
+# Define the jobs to run
 jobs:
- build1:
+  # Job 1: Build for ESP01_1M
+  build1:
+    name: Build ESP01_1M
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -27,42 +33,21 @@ jobs:
         run: |
           pip install -U platformio
           platformio update
-      - name: Compile Code
+
+      - name: Compile Code for ESP01_1M
         run: |
           platformio run -e esp01_1m
-      - name: Upload Artifacts
+
+      - name: Upload ESP01_1M Artifact
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: Alexa-IR-bridge-ESP01_1M
+          name: Alexa-IR-bridge-ESP01_1M # Artifact name (matches download later)
           path: .pio/build/esp01_1m/firmware.bin
-          if-no-files-found: error
+          if-no-files-found: error # Fail if firmware.bin is missing
 
- build2:
-   runs-on: ubuntu-latest
-   steps:
-     - name: Checkout Repository
-       uses: actions/checkout@v4.1.1
-
-     - name: Set up Python
-       uses: actions/setup-python@v5
-       with:
-         python-version: '3.x'
-
-     - name: Install PlatformIO
-       run: |
-         pip install -U platformio
-         platformio update
-     - name: Compile Code
-       run: |
-         platformio run -e nodemcuv2
-     - name: Upload Artifacts
-       uses: actions/upload-artifact@v4.3.1
-       with:
-         name: Alexa-IR-bridge-ESP8266
-         path: .pio/build/nodemcuv2/firmware.bin
-         if-no-files-found: error
-
- build3:
+  # Job 2: Build for NodeMCUv2 (ESP8266)
+  build2:
+    name: Build NodeMCUv2 (ESP8266)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -77,68 +62,117 @@ jobs:
         run: |
           pip install -U platformio
           platformio update
-      - name: Compile Code
+
+      - name: Compile Code for NodeMCUv2
         run: |
-          platformio run -e esp32dev
-      - name: Upload Artifacts
+          platformio run -e nodemcuv2
+
+      - name: Upload NodeMCUv2 Artifact
         uses: actions/upload-artifact@v4.3.1
         with:
-          name: Alexa-IR-bridge-ESP32
+          name: Alexa-IR-bridge-ESP8266 # Artifact name
+          path: .pio/build/nodemcuv2/firmware.bin
+          if-no-files-found: error
+
+  # Job 3: Build for ESP32 Dev Module
+  build3:
+    name: Build ESP32 Dev Module
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4.1.1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install PlatformIO
+        run: |
+          pip install -U platformio
+          platformio update
+
+      - name: Compile Code for ESP32 Dev
+        run: |
+          platformio run -e esp32dev
+
+      - name: Upload ESP32 Artifact
+        uses: actions/upload-artifact@v4.3.1
+        with:
+          name: Alexa-IR-bridge-ESP32 # Artifact name
           path: .pio/build/esp32dev/firmware.bin
           if-no-files-found: error
 
- release:
+  # Job 4: Create Release (runs only after all builds succeed)
+  release:
     name: Release project
     runs-on: ubuntu-latest
+    # Ensure this job runs only if all build jobs were successful
     needs: [build1, build2, build3]
+    # Only run this job if the trigger was a tag push (typical release scenario)
+    # You might want to adjust this condition based on your exact release strategy
+    if: startsWith(github.ref, 'refs/tags/v')
     steps:
-      - name: Get latest release  
-        uses: wemogy/next-release-version-action@2.0.3
-        id: release-version
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          branch: 'release/v1.0'
+      # Step 1: Determine the version from the tag that triggered the workflow
+      # Using github.ref_name which holds the tag name (e.g., v1.2.3)
+      - name: Get version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+        # Example: If tag is v1.2.3, this sets steps.get_version.outputs.VERSION to v1.2.3
 
-      - name: Download artifact
+      # Step 2: Download all artifacts from the build jobs
+      - name: Download all artifacts
         uses: actions/download-artifact@v4.1.4
         with:
-          path: artifacts
+          # No specific name provided, download all artifacts created in this workflow run
+          path: artifacts # Download into an 'artifacts' directory
 
+      # Step 3: Create the GitHub Release
       - name: Create GitHub release
         id: create-new-release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v2 # Use v2 for latest features/fixes
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ steps.release-version.outputs.next-version-name }}
-          name: Alexa-IR-bridge ${{ steps.release-version.outputs.next-version-name }}
+          # Use the version derived from the tag
+          tag_name: ${{ steps.get_version.outputs.VERSION }}
+          # Create release name using the version
+          name: Alexa-IR-bridge ${{ steps.get_version.outputs.VERSION }}
+          # Optional: Mark as pre-release if needed (e.g., if tag contains '-beta')
+          # prerelease: contains(steps.get_version.outputs.VERSION, '-')
+          # Optional: Add release notes from a file or generate automatically
+          # body_path: path/to/CHANGELOG.md
+          # generate_release_notes: true # Requires more setup potentially
 
+      # Step 4: Upload ESP01_1M firmware to the release
       - name: Upload ESP01_1M release asset
-        uses: shogo82148/actions-upload-release-asset@v1.7.4
+        uses: actions/upload-release-asset@v1 # Switched to the official action
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create-new-release.outputs.upload_url }}
           asset_path: artifacts/Alexa-IR-bridge-ESP01_1M/firmware.bin
-          asset_name: Alexa-IR-bridge-ESP01_1M_${{ steps.release-version.outputs.next-version-name }}.bin
+          asset_name: Alexa-IR-bridge-ESP01_1M_${{ steps.get_version.outputs.VERSION }}.bin
           asset_content_type: application/octet-stream
-      
+
+      # Step 5: Upload NodeMCU V2 (ESP8266) firmware to the release
       - name: Upload NodeMCU V2 release asset
-        uses: shogo82148/actions-upload-release-asset@v1.7.4
+        uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create-new-release.outputs.upload_url }}
           asset_path: artifacts/Alexa-IR-bridge-ESP8266/firmware.bin
-          asset_name: Alexa-IR-bridge-ESP8266_${{ steps.release-version.outputs.next-version-name }}.bin
+          asset_name: Alexa-IR-bridge-ESP8266_${{ steps.get_version.outputs.VERSION }}.bin
           asset_content_type: application/octet-stream
-      
+
+      # Step 6: Upload ESP32 firmware to the release
       - name: Upload ESP32 release asset
-        uses: shogo82148/actions-upload-release-asset@v1.7.4
+        uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create-new-release.outputs.upload_url }}
           asset_path: artifacts/Alexa-IR-bridge-ESP32/firmware.bin
-          asset_name: Alexa-IR-bridge-ESP32_${{ steps.release-version.outputs.next-version-name }}.bin
+          asset_name: Alexa-IR-bridge-ESP32_${{ steps.get_version.outputs.VERSION }}.bin
           asset_content_type: application/octet-stream
