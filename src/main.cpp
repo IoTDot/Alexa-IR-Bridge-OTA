@@ -33,10 +33,8 @@ WiFiManager wifiManager;
 Ticker irTicker;
 
 #if defined(ESP8266)
-ESP8266WebServer server(80);
 ESP8266WebServer configServer(8080);
 #else
-WebServer server(80);
 WebServer configServer(8080);
 #endif
 
