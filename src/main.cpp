@@ -151,10 +151,20 @@ void setupFauxmo() {
   Serial.printf("[fauxmo] setPort(%d)\n", 80);
   fauxmo.enable(true);
   Serial.println("[fauxmo] enable(true)");
+
+  // Dodajemy urządzenia do fauxmo
   for (uint8_t i = 0; i < numDevices; i++) {
     fauxmo.addDevice(devices[i].deviceName.c_str());
     Serial.printf("[fauxmo] addDevice(%s)\n", devices[i].deviceName.c_str());
   }
+
+  // ---- TU DOPISUJEMY: ile i jakie urządzenia załadował fauxmo ----
+  Serial.printf("[fauxmo] załadowano %d urządzeń:\n", numDevices);
+  for (uint8_t i = 0; i < numDevices; i++) {
+    Serial.printf("  %d) %s\n", i + 1, devices[i].deviceName.c_str());
+  }
+  // ----------------------------------------------------------------
+
   fauxmo.onSetState([](unsigned char id, const char* name, bool state, unsigned char val) {
     Serial.printf("[fauxmo] onSetState: id=%d name=%s state=%d\n", id, name, state);
     if (id < numDevices) sendIRSignal(devices[id]);
