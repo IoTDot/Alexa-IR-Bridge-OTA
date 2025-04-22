@@ -38,7 +38,17 @@ WebServer configServer(8080);
 
 bool shouldSaveConfig = false;
 bool configMode = false;
+bool configJustSaved = false;
 const char* CONFIG_FILE = "/config.json";
+
+void blinkLED(uint8_t times, uint16_t delayMs = 150) {
+  for (uint8_t i = 0; i < times; i++) {
+    digitalWrite(CONNECTED_LED, LOW);   // LOW = włączona
+    delay(delayMs);
+    digitalWrite(CONNECTED_LED, HIGH);  // HIGH = wyłączona
+    delay(delayMs);
+  }
+}
 
 void loadDevicesConfig() {
   if (!LittleFS.begin()) {
@@ -106,6 +116,7 @@ void saveDevicesConfig() {
     Serial.println("Konfiguracja zapisana w LittleFS");
   }
   configFile.close();
+  configJustSaved = true;
 }
 
 void saveConfigCallback() {
@@ -115,22 +126,26 @@ void saveConfigCallback() {
 void setupWiFi() {
   WiFi.mode(WIFI_STA);
   pinMode(CONNECTED_LED, OUTPUT);
-  digitalWrite(CONNECTED_LED, HIGH);
+  digitalWrite(CONNECTED_LED, LOW); // Włącz LED, tryb konfiguracji
   IPAddress apIP(4, 4, 4, 4);
   IPAddress gateway(4, 4, 4, 4);
   IPAddress subnet(255, 255, 255, 0);
   wifiManager.setAPStaticIPConfig(apIP, gateway, subnet);
   wifiManager.setSaveConfigCallback(saveConfigCallback);
+
   if (!wifiManager.autoConnect("IrAlexa")) {
     Serial.println("Nie udało się połączyć, timeout");
     delay(3000);
   } else {
     Serial.println("Połączono z WiFi");
+    blinkLED(3);               // Miganie po udanym połączeniu
+    digitalWrite(CONNECTED_LED, HIGH);  // LED wyłączona
     if (shouldSaveConfig) {
       ESP.restart();
       delay(5000);
     }
   }
+
   Serial.printf("[WIFI] SSID: %s, IP: %s\n", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
 }
 
@@ -176,12 +191,19 @@ void handleButton() {
   static uint8_t pressCount = 0;
   static bool lastButtonState = HIGH;
   static unsigned long pressStartTime = 0;
+
   bool current = digitalRead(BOOT_BUTTON_PIN);
+  // Debounce
   if (current != lastButtonState) {
-    delay(50); current = digitalRead(BOOT_BUTTON_PIN);
+    delay(50);
+    current = digitalRead(BOOT_BUTTON_PIN);
   }
+
+  // Long press (>5 s) → reset WiFiManager settings and restart
   if (current == LOW) {
-    if (lastButtonState == HIGH) pressStartTime = millis();
+    if (lastButtonState == HIGH) {
+      pressStartTime = millis();
+    }
     if (millis() - pressStartTime >= 5000) {
       wifiManager.resetSettings();
       WiFi.disconnect(true);
@@ -189,24 +211,36 @@ void handleButton() {
       ESP.restart();
     }
   }
+
+  // Button released
   if (current == HIGH && lastButtonState == LOW) {
+    // Only count if it was a short press (<5 s)
     if (millis() - pressStartTime < 5000) {
       pressCount++;
       if (pressCount >= 3) {
+        pressCount = 0;
         configMode = !configMode;
+
         if (configMode) {
+          // Enter config-mode: stop fauxmo, start web interface
           fauxmo.enable(false);
           setupWebInterface(configServer);
           configServer.begin();
+
+          // Blink 3× fast, then keep LED on
+          blinkLED(3);
+          digitalWrite(CONNECTED_LED, LOW);
         } else {
+          // Exit config-mode: stop web interface, resume fauxmo
           configServer.close();
           fauxmo.enable(true);
         }
-        pressCount = 0;
       }
     }
+    // Reset timer for next sequence
     pressStartTime = 0;
   }
+
   lastButtonState = current;
 }
 
@@ -214,7 +248,7 @@ void setup() {
   Serial.begin(115200);
   pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
   pinMode(CONNECTED_LED, OUTPUT);
-  digitalWrite(CONNECTED_LED, LOW);
+  digitalWrite(CONNECTED_LED, HIGH);
   irsend.begin();
   setupWiFi();
   loadDevicesConfig();
@@ -223,7 +257,20 @@ void setup() {
 
 void loop() {
   handleButton();
-  if (configMode) configServer.handleClient();
-  else fauxmo.handle();
-  digitalWrite(CONNECTED_LED, WiFi.status() == WL_CONNECTED);
+
+  if (configMode) {
+    configServer.handleClient();
+  } else {
+    fauxmo.handle();
+  }
+
+  if (configJustSaved) {
+    blinkLED(5); // Mignij 5x po zapisaniu konfiguracji
+    configJustSaved = false;
+  }
+
+  // Domyślnie LED nie świeci jeśli WiFi połączone
+  if (!configMode && WiFi.status() == WL_CONNECTED) {
+    digitalWrite(CONNECTED_LED, HIGH); // Wyłącz LED
+  }
 }
