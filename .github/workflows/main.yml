@@ -24,13 +24,18 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4.1.1
 
-      - name: Remove post-build script for CI
-        run: rm -f ./scripts/upload_script.py
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
+
+      - name: Disable post-build script in platformio.ini for CI
+        run: |
+          # Zakomentuj linie zaczynające się od 'extra_scripts ='
+          sed -i -E '/^[[:space:]]*extra_scripts[[:space:]]*=/s/^/#/' platformio.ini
+          echo "--- platformio.ini after modification ---"
+          cat platformio.ini
+          echo "---------------------------------------"
 
       - name: Install PlatformIO
         run: |
@@ -56,13 +61,18 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4.1.1
 
-      - name: Remove post-build script for CI
-        run: rm -f ./scripts/upload_script.py
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
+
+      - name: Disable post-build script in platformio.ini for CI
+        run: |
+          # Zakomentuj linie zaczynające się od 'extra_scripts ='
+          sed -i -E '/^[[:space:]]*extra_scripts[[:space:]]*=/s/^/#/' platformio.ini
+          echo "--- platformio.ini after modification ---"
+          cat platformio.ini
+          echo "---------------------------------------"
 
       - name: Install PlatformIO
         run: |
@@ -88,13 +98,18 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4.1.1
 
-      - name: Remove post-build script for CI
-        run: rm -f ./scripts/upload_script.py
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
+
+      - name: Disable post-build script in platformio.ini for CI
+        run: |
+          # Zakomentuj linie zaczynające się od 'extra_scripts ='
+          sed -i -E '/^[[:space:]]*extra_scripts[[:space:]]*=/s/^/#/' platformio.ini
+          echo "--- platformio.ini after modification ---"
+          cat platformio.ini
+          echo "---------------------------------------"
 
       - name: Install PlatformIO
         run: |
