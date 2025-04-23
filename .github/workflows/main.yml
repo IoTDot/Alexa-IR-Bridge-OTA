@@ -36,7 +36,7 @@ jobs:
 
       - name: Compile Code for ESP01_1M
         run: |
-          platformio run -e esp01_1m
+          platformio run -e esp01_1m --project-option="extra_scripts="
 
       - name: Upload ESP01_1M Artifact
         uses: actions/upload-artifact@v4.3.1
@@ -65,7 +65,7 @@ jobs:
 
       - name: Compile Code for NodeMCUv2
         run: |
-          platformio run -e nodemcuv2
+          platformio run -e nodemcuv2 --project-option="extra_scripts="
 
       - name: Upload NodeMCUv2 Artifact
         uses: actions/upload-artifact@v4.3.1
@@ -94,7 +94,7 @@ jobs:
 
       - name: Compile Code for ESP32 Dev
         run: |
-          platformio run -e esp32dev
+          platformio run -e esp32dev --project-option="extra_scripts="
 
       - name: Upload ESP32 Artifact
         uses: actions/upload-artifact@v4.3.1

@@ -2,12 +2,15 @@
 Import("env")
 
 import os             # operacje na systemie plików i zmienne środowiskowe
+import socket         # obsługa wyjątków związanych z siecią
 import sys            # dostęp do stderr
 import time           # opóźnienia w pętli odczytu
 import logging        # moduł logowania
+import getpass        # pobieranie nazwy aktualnego użytkownika
 from pathlib import Path            # wygodna praca ze ścieżkami
 from typing import Optional, Tuple, List  # typowanie zmiennych
 
+import paramiko       # SSH i SFTP
 
 # -------------------------------------------------------------
 # Globalne stałe (można nadpisać przez zmienne środowiskowe)
@@ -248,9 +251,6 @@ def after_build(source, target, env) -> None:
     if os.environ.get("GITHUB_ACTIONS"):
         logger.info("CI detected – skip post-build.")
         return
-    import getpass        # pobieranie nazwy aktualnego użytkownika
-    import paramiko       # SSH i SFTP
-    import socket         # obsługa wyjątków związanych z siecią
 
     logger.info("Proces po kompilacji...")
     board: str = env['PIOENV']
