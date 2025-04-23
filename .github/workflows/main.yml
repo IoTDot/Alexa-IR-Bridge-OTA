@@ -137,12 +137,12 @@ jobs:
     # Ensure this job runs only if all build jobs were successful
     needs: [build1, build2, build3]
     steps:
-      # Step 1: Determine the version from the tag that triggered the workflow
-      # Using github.ref_name which holds the tag name (e.g., v1.2.3)
-      - name: Get version from tag
+      - name: Get latest release  
+        uses: wemogy/next-release-version-action@2.0.3
         id: release-version
-        run: echo "VERSION=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
-        # Example: If tag is v1.2.3, this sets steps.release-version.outputs.next-version-name to v1.2.3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: 'release/v2.0'
 
       # Step 2: Download all artifacts from the build jobs
       - name: Download all artifacts
@@ -170,7 +170,7 @@ jobs:
 
       # Step 4: Upload ESP01_1M firmware to the release
       - name: Upload ESP01_1M release asset
-        uses: actions/upload-release-asset@v1 # Switched to the official action
+        uses: shogo82148/actions-upload-release-asset@v1.7.4 # Switched to the official action
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -181,7 +181,7 @@ jobs:
 
       # Step 5: Upload NodeMCU V2 (ESP8266) firmware to the release
       - name: Upload NodeMCU V2 release asset
-        uses: actions/upload-release-asset@v1
+        uses: shogo82148/actions-upload-release-asset@v1.7.4
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -192,7 +192,7 @@ jobs:
 
       # Step 6: Upload ESP32 firmware to the release
       - name: Upload ESP32 release asset
-        uses: actions/upload-release-asset@v1
+        uses: shogo82148/actions-upload-release-asset@v1.7.4
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
