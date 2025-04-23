@@ -29,6 +29,7 @@ jobs:
         with:
           python-version: '3.x'
 
+        #Bypassing the extra_scripts script in platformio.ini for CI
       - name: Disable post-build script in platformio.ini for CI
         run: |
           # Zakomentuj linie zaczynające się od 'extra_scripts ='
@@ -66,6 +67,7 @@ jobs:
         with:
           python-version: '3.x'
 
+        #Bypassing the extra_scripts script in platformio.ini for CI
       - name: Disable post-build script in platformio.ini for CI
         run: |
           # Zakomentuj linie zaczynające się od 'extra_scripts ='
@@ -103,6 +105,7 @@ jobs:
         with:
           python-version: '3.x'
 
+        #Bypassing the extra_scripts script in platformio.ini for CI
       - name: Disable post-build script in platformio.ini for CI
         run: |
           # Zakomentuj linie zaczynające się od 'extra_scripts ='
