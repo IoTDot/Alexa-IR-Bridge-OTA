@@ -18,5 +18,6 @@ void stopWebInterface(WebServerType &server);
 
 // Handler to reboot the ESP via the web interface
 void handleRestart();
+void handleTest();
 
 #endif // WEBINTERFACE_H

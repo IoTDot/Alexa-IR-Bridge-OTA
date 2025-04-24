@@ -6,6 +6,7 @@
 #include <LittleFS.h>
 
 extern void saveDevicesConfig();
+extern void sendIRSignal(const Device &dev);
 
 // statyczny wskaźnik na aktywny serwer
 static WebServerType* webServer = nullptr;
@@ -152,6 +153,17 @@ const char index_html[] PROGMEM = R"rawliteral(
         fetch(`/remove?index=${idx}`)
           .then(_ => loadDevices());
       }
+      function testDevice(idx) {
+        fetch(`/test?index=${idx}`)
+          .then(r => {
+            if (r.ok) {
+              alert("Sygnał IR wysłany do urządzenia #" + idx);
+            } else {
+              return r.text().then(text => { throw new Error(text); });
+            }
+          })
+          .catch(e => alert("Błąd testu IR: " + e.message));
+      }
       function saveConfig() {
         fetch("/save");
         alert("Configuration saved.");
@@ -248,8 +260,18 @@ void handleList() {
     html += "<small class='text-muted'>Bits: " 
          + String(devices[i].bits) + "</small>";
     html += "</div>";
-    html += "<button class='btn btn-danger btn-sm' onclick='removeDevice(" 
-         + String(i) + ")'><i class='bi bi-trash'></i></button>";
+    // przycisk Test IR
+    html += "<button "
+         "class='btn btn-secondary btn-sm me-1' "
+          "onclick='testDevice(" + String(i) + ")' "
+          "title='Test IR'>"
+          "<i class='bi bi-play-circle me-1'></i>"
+          "Test IR"
+          "</button>";
+    // przycisk usuń
+    html += "<button class='btn btn-danger btn-sm' "
+         "onclick='removeDevice(" + String(i) + ")'>"
+        "<i class='bi bi-trash'></i></button>";
     html += "</div>";
   }
   webServer->send(200, "text/html", html);
@@ -284,6 +306,20 @@ void handleProtocols() {
   webServer->send(200, "application/json", out);
 }
 
+// +++ nowy handler – test wysyłki IR +++
+void handleTest() {
+  if (!webServer->hasArg("index")) {
+    return webServer->send(400, "text/plain", "Missing index");
+  }
+  uint8_t idx = webServer->arg("index").toInt();
+  if (idx >= numDevices) {
+    return webServer->send(400, "text/plain", "Invalid index");
+  }
+  // Wyślij sygnał IR
+  sendIRSignal(devices[idx]);
+  webServer->send(200, "text/plain", "IR code sent");
+}
+
 // Handler – root page (bez zmian)
 void handleRoot() {
   webServer->send_P(200, "text/html", index_html);
@@ -298,6 +334,7 @@ void setupWebInterface(WebServerType &server) {
   webServer->on("/save",    handleSave);
   webServer->on("/restart", handleRestart);
   webServer->on("/protocols",handleProtocols);
+  webServer->on("/test",      handleTest);
   webServer->begin();
   Serial.printf("Web interface: http://%s:8080\n", WiFi.localIP().toString().c_str());
 }

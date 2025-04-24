@@ -245,13 +245,9 @@ def check_flash_id(
         return False
 
 # -------------------------------------------------------------
-# Główna funkcja wywoływana po buildzie PlatformIO
+# Główna funkcja wywoływana po buildzie PlatformIO (bez detekcji CI)
 # -------------------------------------------------------------
 def after_build(source, target, env) -> None:
-    if os.environ.get("GITHUB_ACTIONS"):
-        logger.info("CI detected – skip post-build.")
-        return
-
     logger.info("Proces po kompilacji...")
     board: str = env['PIOENV']
     logger.info(f"Płytka: {board}")
